@@ -1,0 +1,170 @@
+"""Tests for LLM agent, state API, and experiment runner.
+
+Usage:
+    python experiments/test_llm_agent.py
+    python experiments/test_llm_agent.py --ollama   # optional live Ollama check
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from agents.llm_agent import LLMAgent
+from experiments.llm_experiment import run_llm_experiment
+from simulator.beer_game import BeerGame
+
+
+def test_prompt_building() -> None:
+    agent = LLMAgent(agent_name="Retailer", model_name="qwen:1.5b")
+
+    state = {
+        "inventory": 15,
+        "backlog": 2,
+        "incoming_shipments": 5,
+        "pipeline_inventory": 5,
+        "last_customer_demand": 8,
+        "last_order": 10,
+        "current_week": 7,
+    }
+
+    prompt = agent.build_prompt(state)
+    assert "inventory management agent" in prompt.lower()
+    assert "Inventory: 15" in prompt
+    assert "Backlog: 2" in prompt
+    assert "Return ONLY a single integer" in prompt
+    assert "between 0 and 100" in prompt
+    print("[OK] Prompt building test passed")
+    print(f"Sample prompt:\n{prompt}\n")
+
+
+def test_parsing() -> None:
+    agent = LLMAgent(agent_name="Retailer", max_order=100)
+
+    cases = [
+        ("15", 15),
+        ("Order: 25", 25),
+        ("The order is 30 units", 30),
+        ("-5", 0),
+        ("150", 100),
+        ("No number here", 0),
+        (None, 0),
+    ]
+
+    for response, expected in cases:
+        result = agent.parse_order(response, default=0)
+        assert result == expected, f"{response!r} -> {result}, expected {expected}"
+        print(f"  [OK] parse_order({response!r}) -> {result}")
+
+    print("[OK] Parsing test passed\n")
+
+
+def test_connection_fallback() -> None:
+    agent = LLMAgent(
+        agent_name="Retailer",
+        ollama_url="http://localhost:59999",
+    )
+    assert agent.query_model("test prompt") is None
+    assert agent.generate_order({"inventory": 10, "current_week": 1}) == 0
+    print("[OK] Connection fallback test passed\n")
+
+
+def test_state_api() -> None:
+    env = BeerGame(max_weeks=2, verbose=False)
+    env.reset()
+    actions = {n: 5 for n in ("Retailer", "Wholesaler", "Distributor", "Factory")}
+    env.step(actions)
+
+    retailer = env.get_state("Retailer")
+    required = {
+        "inventory",
+        "backlog",
+        "incoming_shipments",
+        "pipeline_inventory",
+        "last_customer_demand",
+        "last_order",
+        "current_week",
+    }
+    assert required <= retailer.keys()
+
+    all_states = env.get_all_states()
+    assert set(all_states.keys()) == {
+        "Retailer", "Wholesaler", "Distributor", "Factory"
+    }
+    assert len(all_states) == 4
+    assert all(required <= s.keys() for s in all_states.values())
+
+    print("[OK] State API test passed\n")
+
+
+def test_offline_experiment_run() -> None:
+    original = LLMAgent.generate_order
+
+    def stub_order(self, state, fallback=0):
+        return 5
+
+    LLMAgent.generate_order = stub_order
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = os.path.join(tmpdir, "llm_experiment_results.csv")
+            df = run_llm_experiment(
+                max_weeks=3,
+                results_file=output,
+            )
+            assert len(df) == 3
+            assert os.path.exists(output)
+            assert "total_system_cost" in df.columns
+            assert "bullwhip_overall" in df.columns
+        print("[OK] Offline experiment run test passed\n")
+    finally:
+        LLMAgent.generate_order = original
+
+
+def test_ollama_connection() -> None:
+    agent = LLMAgent(agent_name="Retailer", model_name="qwen:1.5b")
+    state = {
+        "inventory": 12,
+        "backlog": 0,
+        "incoming_shipments": 0,
+        "pipeline_inventory": 0,
+        "last_customer_demand": 5,
+        "last_order": 5,
+        "current_week": 1,
+    }
+    order = agent.generate_order(state, fallback=-1)
+    assert 0 <= order <= agent.max_order
+    print(f"[OK] Ollama live test returned order: {order}\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--ollama",
+        action="store_true",
+        help="Run optional live Ollama integration test",
+    )
+    args = parser.parse_args()
+
+    print("Running LLM agent tests...\n")
+    test_prompt_building()
+    test_parsing()
+    test_connection_fallback()
+    test_state_api()
+    test_offline_experiment_run()
+
+    if args.ollama:
+        try:
+            test_ollama_connection()
+        except Exception as exc:
+            print(f"[FAIL] Ollama live test failed: {exc}")
+            sys.exit(1)
+
+    print("[OK] All tests passed!")
+
+
+if __name__ == "__main__":
+    main()
