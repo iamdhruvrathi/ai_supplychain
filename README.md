@@ -1,207 +1,128 @@
-# AI Supply Chain — Beer Game Simulator
+# AI Supply Chain — Beer Game Research Framework
 
-This repository is a research-focused implementation of the classic Beer Game
-multi-echelon supply chain, built for RL, LLM experiments, and empirical study
-of the bullwhip effect. It provides a modular simulator, classical policies,
-metrics, plotting, and an experiment harness.
+A research-grade Python framework for simulating the classic **Beer Game**, benchmarking **autonomous LLM agents** via [Ollama](https://ollama.ai), and analyzing **bullwhip dynamics** and **agent reliability**—aligned with *Reliability and Effectiveness of Autonomous AI Agents in Supply Chain Management* (Long et al.). The codebase supports paper replication, repeated-run analysis, and future PPO/GRPO post-training.
 
-Highlights
+## Research Motivation
 
-- Multi-echelon supply chain (Retailer → Wholesaler → Distributor → Factory)
-- FIFO shipment pipelines with configurable lead times
-- Inventory/backlog handling and per-step cost accounting
-- History recording for orders, demand, inventory, backlog, and costs
-- Modular metrics including bullwhip computations
-- Classical policies and an experiment harness
-- **LLM-driven agents** via Ollama for autonomous supply chain decisions
-- RL-ready state API for future PPO/GRPO training
+Decentralized supply chains amplify demand variability upstream—the **bullwhip effect**. Human players in the Beer Game notoriously over-order and oscillate. This project asks:
 
-Installation
+- Can **local LLM policies** stabilize a four-echelon chain?
+- How do **reasoning models** (e.g. DeepSeek-R1) compare to **direct models** (e.g. Qwen) on cost, backlog, and bullwhip?
+- Can shaped rewards and trajectory logging support future **RL fine-tuning** (PPO/GRPO)?
 
-- Create a virtual environment and install requirements:
+## Current Capabilities
+
+| Area | Status |
+|------|--------|
+| Multi-echelon simulator (Retailer → Factory) | ✓ |
+| FIFO shipment pipelines, inventory, backlog, costs | ✓ |
+| LLM agents via Ollama (decentralized, local state only) | ✓ |
+| Bullwhip + stability metrics | ✓ |
+| Trajectory logging `(s, a, r, s')` per agent | ✓ |
+| Shaped reward (cost + bullwhip + backlog) | ✓ |
+| Classical baselines (base-stock, moving average, random) | ✓ |
+| Multi-model benchmarking pipeline | ✓ |
+| **Agent bullwhip** (Ψ, Φ, σ² across runs) | ✓ |
+| **Repeated-run reliability** (CV, tails, instability) | ✓ |
+| Orchestrator modes + policy constraints | ✓ |
+| YAML experiment configs | ✓ |
+| Trajectory export (JSONL / CSV / parquet) | ✓ |
+| CSV results + comparative plots | ✓ |
+| PPO / GRPO training | Planned |
+| Gymnasium wrapper | Planned |
+
+## LLM Benchmarking
+
+The evaluation pipeline compares **reasoning** and **non-reasoning** small models against a **base-stock** baseline over repeated seeds:
+
+- `qwen2.5:1.5b` — compact instruction-following model
+- `deepseek-r1:1.5b` — reasoning-oriented model (longer responses; robust parsing)
+- `base_stock` — classical replenishment policy
+
+Metrics include total cost, bullwhip ratio, backlog, shaped reward trajectories, and cumulative instability. See [SETUP.md](SETUP.md) for installation and [ARCHITECTURE.md](ARCHITECTURE.md) for technical detail.
+
+## Quick Start
 
 ```powershell
+# 1. Environment
 python -m venv venv
 venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+
+# 2. Verify (no Ollama required)
+python main.py test-llm
+python main.py demo
+
+# 3. LLM experiment (requires Ollama — see SETUP.md)
+ollama serve
+ollama pull qwen2.5:1.5b
+python main.py llm --weeks 30 --model qwen2.5:1.5b
+
+# 4. Full model comparison
+python main.py compare
+
+# 5. Paper-aligned repeated runs (agent bullwhip + reliability)
+python main.py repeated --runs 30 --offline   # offline = base-stock only
+
+# 6. YAML-driven benchmark
+python main.py benchmark --config configs/default_experiment.yaml
 ```
 
-Quick usage
+### CLI Commands
 
-```python
-from simulator.beer_game import BeerGame
+| Command | Description |
+|---------|-------------|
+| `python main.py test-llm` | Unit tests (parsing, trajectories, reward shaping) |
+| `python main.py test-state` | RL state API validation |
+| `python main.py demo` | 10-week base-stock simulation |
+| `python main.py baseline` | Classical policy comparison |
+| `python main.py llm` | Single-model LLM experiment |
+| `python main.py compare` | Qwen vs DeepSeek vs base-stock (10 runs each) |
 
-env = BeerGame(max_weeks=30, verbose=False)
-env.reset()
+## Documentation
 
-actions = {name: 5 for name in ["Retailer","Wholesaler","Distributor","Factory"]}
-while True:
-    _, _, done, info = env.step(actions)
-    if done:
-        break
+| Document | Contents |
+|----------|----------|
+| [SETUP.md](SETUP.md) | Python, Ollama, models, GPU, experiments, troubleshooting |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Simulator design, APIs, data flow, metrics, RL roadmap |
+| [docs/RESEARCH_NOTES.md](docs/RESEARCH_NOTES.md) | Paper alignment audit, gaps, technical debt |
+| [docs/REPLICATION_PLAN.md](docs/REPLICATION_PLAN.md) | Replication checklist and roadmap |
+| [docs/METRICS.md](docs/METRICS.md) | Equations: classical & agent bullwhip, reliability |
 
-print('Bullwhip:', info.get('bullwhip'))
-```
-
-Running baseline experiments
-
-```powershell
-python experiments\baseline_experiment.py
-```
-
-## LLM-Driven Experiments with Ollama
-
-Run autonomous supply chains controlled by local LLMs.
-
-### Setup
-
-1. **Install Ollama** from https://ollama.ai
-2. **Start Ollama**:
-   ```powershell
-   ollama serve
-   ```
-3. **Pull a model** (in another terminal):
-   ```powershell
-   ollama pull qwen:1.5b
-   ```
-   (Or use another lightweight model like `ollama pull phi` or `ollama pull neural-chat`)
-
-### Test LLM Agent
-
-Verify prompt building and parsing (no Ollama connection required):
-
-```powershell
-python experiments\test_llm_agent.py
-```
-
-### Run LLM Experiment
-
-Run a full Beer Game simulation with each node controlled by an LLM:
-
-```powershell
-python experiments\llm_experiment.py --weeks 30 --model qwen:1.5b
-```
-
-Options:
-
-- `--weeks N` — number of weeks (default 30)
-- `--model NAME` — Ollama model (default qwen:1.5b)
-- `--url URL` — Ollama API endpoint (default http://localhost:11434)
-- `--max-order N` — maximum order quantity (default 100)
-- `--output PATH` — CSV output file (default results/llm_experiment_results.csv)
-
-Example:
-
-```powershell
-python experiments\llm_experiment.py --weeks 50 --model qwen:1.5b --output results/my_experiment.csv
-```
-
-Sample prompt sent to Ollama:
-
-```text
-You are an inventory management agent in a multi-echelon supply chain Beer Game.
-
-Your goal is to:
-* minimize stockouts
-* avoid excessive inventory
-* reduce supply chain instability
-
-Current state:
-Inventory: 12
-Backlog: 3
-Incoming shipments: 5
-Pipeline inventory: 4
-Last customer demand: 8
-Last order placed: 6
-Current week: 7
-
-Decide how many units to order this week.
-
-Rules:
-* Return ONLY a single integer.
-* No explanation.
-* Order must be between 0 and 100.
-
-Order:
-```
-
-Results will be saved as CSV with per-week metrics: demand, cost, bullwhip, orders, inventory, backlog.
-Plots are also generated in `plots/` including demand vs orders, inventory/backlog trajectories, bullwhip ratios, and cumulative cost.
-
-## Architecture (LLM decision loop)
-
-Each echelon runs an independent `LLMAgent` with no shared messages:
+## Project Layout
 
 ```
-env.get_all_states()  →  local state per node
-       ↓
-LLMAgent.build_prompt(state)  →  Ollama /api/generate
-       ↓
-LLMAgent.parse_order(response)  →  clamped integer order
-       ↓
-env.step(actions)  →  FIFO shipments, costs, bullwhip history
-       ↓
-repeat until max_weeks
+simulator/     BeerGame environment + SupplyChainNode
+agents/        LLMAgent (Ollama integration)
+policies/      Classical replenishment policies
+metrics/       Bullwhip and stability analysis
+evaluation/    Multi-model comparison + plots
+experiments/   Experiment runners and tests
+results/       CSV outputs
+plots/         Generated figures
+main.py        CLI entry point
 ```
 
-RL-ready observation (same schema for future PPO/GRPO/MARL):
+## Future Roadmap (PPO / GRPO)
 
-```python
-state = env.get_state("Retailer")
-# inventory, backlog, incoming_shipments, pipeline_inventory,
-# last_customer_demand, last_order, current_week
-all_states = env.get_all_states()
-```
+1. **Benchmark** — LLM and classical baselines with shared trajectories and metrics *(current phase)*.
+2. **PPO** — Train per-echelon policies on `get_trajectories()` rollouts with shaped rewards.
+3. **GRPO** — Group-relative optimization for aligning LLM ordering behavior.
+4. **Gymnasium** — Standard `reset` / `step` wrapper for RL libraries.
+5. **MARL** — Optional inter-agent communication on top of local observations.
 
-## Future RL roadmap
-
-1. **Behavioral baseline** — LLM policies as a reference for bullwhip and cost.
-2. **Shared state API** — `get_state` / `get_all_states` feed Gymnasium wrappers.
-3. **PPO / GRPO** — train per-echelon or centralized critics on the same observations.
-4. **MARL** — optional communication channels layered on top of local state.
-5. **Comparison studies** — LLM vs `base_stock`, `moving_average`, and learned policies.
-
-Project layout
-
-- `simulator/` — core simulator and node abstraction
-- `policies/` — classical policy implementations (base-stock, moving average, random)
-- `agents/` — LLM / RL agent scaffolds
-- `metrics/` — bullwhip and variance metrics
-- `experiments/` — reproducible experiment runners
-- `plots/` — saved figures (created by plotting routines)
-
-Research notes
-
-- The environment uses FIFO pipelines: each node's `incoming_shipments` deque has
-  length equal to its lead time. On each step the left-most element arrives and is
-  added to inventory; new outgoing shipments are appended to the right to arrive
-  after the configured lead time.
-- Costs: holding cost is `inventory * holding_cost`, backlog cost is `backlog * backlog_cost`.
-- Bullwhip is computed as the variance of agent orders divided by variance of customer demand.
-- LLM agents receive structured state (inventory, backlog, pipeline, demand, orders, week) and output order quantities via Ollama.
-- Each node acts independently—no communication between agents. This allows study of decentralized decision-making.
-
-Roadmap
-
-- ✓ Core simulator with FIFO pipelines and cost tracking
-- ✓ Classical policies (base-stock, moving average, random)
-- ✓ Bullwhip metrics and variance analysis
-- ✓ LLM-driven agents via Ollama
-- [ ] RL agent scaffolding (PPO, GRPO)
-- [ ] Dataset-backed demand generation
-- [ ] Multi-agent communication patterns
-- [ ] LLM fine-tuning for supply chain
-- [ ] Visualization dashboard
-
-Citation
-
-If you use this project in research, please cite:
+## Citation
 
 ```bibtex
 @software{beer_game_llm_2026,
-  title={AI Supply Chain Beer Game Simulator},
-  author={Your Name},
-  year={2026},
-  url={https://github.com/yourusername/ai_supplychain}
+  title  = {AI Supply Chain Beer Game Simulator},
+  author = {Your Name},
+  year   = {2026},
+  url    = {https://github.com/yourusername/ai_supplychain}
 }
 ```
+
+## References
+
+- Sterman, J. D. (1989). Modeling managerial behavior in dynamic decision making experiments. *Management Science*.
+- Lee, H. L., Padmanabhan, V., & Whang, S. (1997). The bullwhip effect in supply chains. *Sloan Management Review*.

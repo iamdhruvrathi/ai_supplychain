@@ -53,6 +53,15 @@ def test_parsing() -> None:
         ("150", 100),
         ("No number here", 0),
         (None, 0),
+        (
+            "Let me think step by step. Inventory is low. "
+            "Final order quantity: 42",
+            42,
+        ),
+        (
+            "Reasoning: backlog is high.\n\nAnswer: 18",
+            18,
+        ),
     ]
 
     for response, expected in cases:
@@ -71,6 +80,38 @@ def test_connection_fallback() -> None:
     assert agent.query_model("test prompt") is None
     assert agent.generate_order({"inventory": 10, "current_week": 1}) == 0
     print("[OK] Connection fallback test passed\n")
+
+
+def test_trajectory_logging() -> None:
+    env = BeerGame(max_weeks=2, verbose=False)
+    env.reset()
+    actions = {n: 5 for n in ("Retailer", "Wholesaler", "Distributor", "Factory")}
+    env.step(actions)
+
+    trajectories = env.get_trajectories()
+    assert len(trajectories) == 4
+    entry = trajectories[0]
+    required = {
+        "week", "agent", "state", "action", "reward",
+        "next_state", "cost", "bullwhip",
+    }
+    assert required <= entry.keys()
+    assert entry["action"] == 5
+    print("[OK] Trajectory logging test passed\n")
+
+
+def test_reward_shaping() -> None:
+    env = BeerGame(max_weeks=1, alpha=1.0, beta=0.1, gamma=0.5)
+    env.reset()
+    actions = {n: 5 for n in ("Retailer", "Wholesaler", "Distributor", "Factory")}
+    _, reward, _, info = env.step(actions)
+
+    components = info["reward_components"]
+    expected = -(
+        components["cost"] + components["bullwhip"] + components["backlog"]
+    )
+    assert abs(reward - expected) < 1e-6
+    print("[OK] Reward shaping test passed\n")
 
 
 def test_state_api() -> None:
@@ -153,6 +194,8 @@ def main() -> None:
     test_prompt_building()
     test_parsing()
     test_connection_fallback()
+    test_trajectory_logging()
+    test_reward_shaping()
     test_state_api()
     test_offline_experiment_run()
 

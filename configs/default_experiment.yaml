@@ -1,0 +1,42 @@
+# Paper-aligned experiment configuration
+experiment:
+  name: baseline_replication
+  weeks: 30
+  runs: 30
+  demand_seed: 42
+  lead_time: 2
+  initial_inventory: 20
+
+orchestrator:
+  mode: decentralized  # decentralized | demand_sharing | history_sharing | centralized
+
+agents:
+  retailer: qwen2.5:1.5b
+  wholesaler: qwen2.5:1.5b
+  distributor: qwen2.5:1.5b
+  factory: qwen2.5:1.5b
+
+constraints:
+  enabled: false
+  order_cap: 100
+  budget_limit: null
+  safety_stock_min: null
+  order_smoothing_alpha: null
+  panic_order_threshold: null
+  panic_max_order: null
+
+reward:
+  alpha: 1.0
+  beta: 0.1
+  gamma: 0.5
+
+evaluation:
+  repeated_runs: true
+  compute_reliability: true
+  compute_agent_bullwhip: true
+  export_trajectories: true
+  ollama_url: http://localhost:11434
+
+output:
+  results_dir: results/repeated_runs
+  plots_dir: plots/research

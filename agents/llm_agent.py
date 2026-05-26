@@ -34,9 +34,24 @@ class LLMAgent:
         self.temperature = temperature
         self.timeout = timeout
 
+    def _orchestrator_context(self, state: Dict[str, Any]) -> str:
+        """Append curated shared information when orchestrator mode is active."""
+        lines = []
+        if "shared_current_demand" in state:
+            lines.append(f"Shared customer demand: {state['shared_current_demand']}")
+        if "shared_demand_history" in state:
+            lines.append(f"Demand history: {state['shared_demand_history']}")
+        if "shared_demand_volatility" in state:
+            lines.append(f"Demand volatility: {state['shared_demand_volatility']:.2f}")
+        if "system_total_backlog" in state:
+            lines.append(f"System backlog: {state['system_total_backlog']}")
+        if not lines:
+            return ""
+        return "\nOrchestrator shared data:\n" + "\n".join(f"* {ln}" for ln in lines) + "\n"
+
     def build_prompt(self, state: Dict[str, Any]) -> str:
         """Build a structured prompt from the agent's local state."""
-        return (
+        prompt = (
             "You are an inventory management agent in a multi-echelon "
             "supply chain Beer Game.\n\n"
             "Your goal is to:\n"
@@ -50,13 +65,17 @@ class LLMAgent:
             f"Pipeline inventory: {state.get('pipeline_inventory', 0)}\n"
             f"Last customer demand: {state.get('last_customer_demand', 0)}\n"
             f"Last order placed: {state.get('last_order', 0)}\n"
-            f"Current week: {state.get('current_week', 0)}\n\n"
-            "Decide how many units to order this week.\n\n"
+            f"Current week: {state.get('current_week', 0)}\n"
+        )
+        extra = self._orchestrator_context(state)
+        prompt = prompt + extra + (
+            "\nDecide how many units to order this week.\n\n"
             "Rules:\n"
             "* Return ONLY a single integer.\n"
             "* No explanation.\n"
             f"* Order must be between 0 and {self.max_order}.\n"
         )
+        return prompt
 
     def query_model(self, prompt: str) -> Optional[str]:
         """Query the local Ollama /api/generate endpoint."""
@@ -87,36 +106,66 @@ class LLMAgent:
             logger.error("Ollama request failed: %s", exc)
             return None
 
+    def _clamp_order(self, value: int) -> int:
+        """Clamp order to valid range [0, max_order]."""
+        clamped = max(0, min(self.max_order, int(value)))
+        if clamped != value:
+            logger.info(
+                "Clamped order from %s to %s (valid range: 0-%s)",
+                value,
+                clamped,
+                self.max_order,
+            )
+        return clamped
+
     def parse_order(
         self,
         response_text: Optional[str],
         default: int = 0,
     ) -> int:
-        """Extract an integer order and clamp to [0, max_order]."""
+        """Extract an integer order from LLM output (including reasoning models).
+
+        Reasoning models often emit explanations before the final quantity.
+        This method prefers explicit order patterns, then the last standalone
+        integer in the response.
+        """
         if response_text is None:
             return default
 
-        try:
-            match = re.search(r"-?\d+", response_text)
-            if not match:
-                logger.warning(
-                    "No integer found in LLM response: %s", response_text
-                )
-                return default
+        text = str(response_text).strip()
+        if not text:
+            return default
 
-            value = int(match.group())
-            clamped = max(0, min(self.max_order, value))
-            if clamped != value:
-                logger.info(
-                    "Clamped order from %s to %s (valid range: 0-%s)",
-                    value,
-                    clamped,
-                    self.max_order,
-                )
-            return clamped
+        try:
+            explicit_patterns = [
+                r"(?:final\s+)?order\s*(?:quantity|amount)?\s*[:=]\s*(\d+)",
+                r"(?:will\s+)?order\s+(\d+)\s*(?:units?)?",
+                r"(?:answer|quantity|units?)\s*[:=]\s*(\d+)",
+                r"```\s*(\d+)\s*```",
+            ]
+            for pattern in explicit_patterns:
+                matches = re.findall(pattern, text, flags=re.IGNORECASE)
+                if matches:
+                    return self._clamp_order(int(matches[-1]))
+
+            standalone = re.findall(r"\b(\d+)\b", text)
+            if standalone:
+                last = standalone[-1]
+                idx = text.rfind(last)
+                prefix = text[max(0, idx - 3):idx]
+                if "-" in prefix:
+                    return self._clamp_order(0)
+                return self._clamp_order(int(last))
+
+            signed = re.search(r"-?\d+", text)
+            if signed:
+                return self._clamp_order(int(signed.group()))
+
+            logger.warning("No integer found in LLM response: %s", text[:200])
+            return default
         except (TypeError, ValueError) as exc:
             logger.error(
-                "Error parsing order from '%s': %s", response_text, exc
+                "Error parsing order from '%s': %s", text[:200], exc
             )
             return default
 

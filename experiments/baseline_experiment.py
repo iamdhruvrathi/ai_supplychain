@@ -2,6 +2,14 @@
 
 Saves results to `results/baseline_results.csv` and returns a pandas DataFrame.
 """
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(ROOT))
+
+from simulator.beer_game import BeerGame
 from typing import Callable, Dict, List
 import os
 import random

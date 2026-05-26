@@ -1,24 +1,56 @@
 from collections import deque
 import random
 import statistics
+from typing import Optional
 
 try:
     import matplotlib.pyplot as plt
 except ImportError:
     plt = None
 
+from simulator.config import OrchestratorMode, RewardConfig, SimulationConfig
+from simulator.demand import DemandGenerator
 from simulator.node import SupplyChainNode
+from simulator.orchestrator import Orchestrator
+from simulator.rewards import compute_shaped_reward
 
 
 class BeerGame:
     def __init__(
         self,
         max_weeks=50,
-        verbose=False
+        verbose=False,
+        alpha=1.0,
+        beta=0.1,
+        gamma=0.5,
+        simulation_config: Optional[SimulationConfig] = None,
     ):
 
-        self.max_weeks = max_weeks
-        self.verbose = verbose
+        if simulation_config is not None:
+            self.config = simulation_config
+            self.max_weeks = simulation_config.max_weeks
+            self.verbose = simulation_config.verbose
+            self.alpha = simulation_config.reward.alpha
+            self.beta = simulation_config.reward.beta
+            self.gamma = simulation_config.reward.gamma
+        else:
+            self.config = SimulationConfig(
+                max_weeks=max_weeks,
+                verbose=verbose,
+            )
+            self.config.reward = RewardConfig(alpha=alpha, beta=beta, gamma=gamma)
+            self.max_weeks = max_weeks
+            self.verbose = verbose
+            self.alpha = alpha
+            self.beta = beta
+            self.gamma = gamma
+
+        self.demand_generator = DemandGenerator.from_config(self.config)
+        self.orchestrator = Orchestrator(
+            mode=self.config.orchestrator_mode,
+            demand_history_window=self.config.demand_history_window,
+        )
+        self._last_customer_demand = 0
 
         self.reset()
 
@@ -29,21 +61,17 @@ class BeerGame:
 
         self.week = 0
 
-        self.retailer = SupplyChainNode(
-            "Retailer"
-        )
+        node_kw = {
+            "initial_inventory": self.config.initial_inventory,
+            "lead_time": self.config.lead_time,
+            "holding_cost": self.config.holding_cost,
+            "backlog_cost": self.config.backlog_cost,
+        }
 
-        self.wholesaler = SupplyChainNode(
-            "Wholesaler"
-        )
-
-        self.distributor = SupplyChainNode(
-            "Distributor"
-        )
-
-        self.factory = SupplyChainNode(
-            "Factory"
-        )
+        self.retailer = SupplyChainNode("Retailer", **node_kw)
+        self.wholesaler = SupplyChainNode("Wholesaler", **node_kw)
+        self.distributor = SupplyChainNode("Distributor", **node_kw)
+        self.factory = SupplyChainNode("Factory", **node_kw)
 
         self.nodes = [
             self.retailer,
@@ -59,8 +87,13 @@ class BeerGame:
             "backlog": {node.name: [] for node in self.nodes},
             "step_cost": [],
             "total_cost": [],
-            "bullwhip": []
+            "bullwhip": [],
+            "reward": [],
         }
+
+        self.trajectories = []
+        self.demand_generator.reset()
+        self._last_customer_demand = 0
 
         return self.get_state()
 
@@ -133,9 +166,68 @@ class BeerGame:
         """Alias for get_all_states_dict to support a stable RL-friendly API."""
         return self.get_all_states_dict()
 
-    def generate_customer_demand(self):
+    def get_agent_state(self, agent_name: str) -> dict:
+        """RL observation with optional orchestrator augmentation."""
+        local = self.get_state_dict(agent_name)
+        return self.orchestrator.augment_state(
+            agent_name,
+            local,
+            self._global_context(),
+        )
 
-        return random.randint(2, 8)
+    def get_global_state(self) -> dict:
+        """Full supply-chain snapshot for analysis and centralized modes."""
+        return {
+            "week": self.week,
+            "demand_history": list(self.history["demand"]),
+            "current_demand": self._last_customer_demand,
+            "total_backlog": sum(n.backlog for n in self.nodes),
+            "total_inventory": sum(n.inventory for n in self.nodes),
+            "echelon_snapshot": {
+                n.name: self.get_state_dict(n.name) for n in self.nodes
+            },
+            "orchestrator_mode": self.config.orchestrator_mode.value,
+        }
+
+    def _global_context(self) -> dict:
+        return {
+            "demand_history": list(self.history["demand"]),
+            "current_demand": self._last_customer_demand,
+            "total_backlog": sum(n.backlog for n in self.nodes),
+            "total_inventory": sum(n.inventory for n in self.nodes),
+            "echelon_snapshot": {
+                n.name: self.get_state_dict(n.name) for n in self.nodes
+            },
+        }
+
+    def get_all_agent_states(self) -> dict:
+        """All echelon observations with orchestrator augmentation."""
+        return {n.name: self.get_agent_state(n.name) for n in self.nodes}
+
+    def generate_customer_demand(self):
+        demand = self.demand_generator.next_demand()
+        self._last_customer_demand = demand
+        return demand
+
+    def compute_metrics(self) -> dict:
+        """Aggregate simulator metrics for evaluation pipelines."""
+        from metrics.bullwhip import bullwhip_per_agent
+        from metrics.stability import stability_summary
+
+        history = self.get_history()
+        bull = bullwhip_per_agent(history)
+        stability = stability_summary(history)
+        return {
+            "bullwhip": bull,
+            "stability": stability,
+            "total_cost": history["total_cost"][-1] if history["total_cost"] else 0.0,
+            "mean_step_cost": (
+                statistics.mean(history["step_cost"])
+                if history["step_cost"]
+                else 0.0
+            ),
+            "trajectory_count": len(self.trajectories),
+        }
 
     def step(self, actions):
         """
@@ -159,6 +251,12 @@ class BeerGame:
             print(
                 f"\n========== WEEK {self.week} =========="
             )
+
+        pre_states = {
+            node.name: self.get_state_dict(node.name)
+            for node in self.nodes
+        }
+        current_week = self.week
 
         # ----------------------------------------
         # STEP 1 — Receive Shipments
@@ -275,10 +373,38 @@ class BeerGame:
 
             total_system_cost += step_cost
 
-        reward = -total_system_cost
-
         self._record_history(customer_demand, total_system_cost)
         bullwhip_metrics = self.compute_bullwhip()
+        total_backlog = sum(node.backlog for node in self.nodes)
+        bullwhip_overall = (
+            bullwhip_metrics.get("overall")
+            if bullwhip_metrics else None
+        )
+        reward, reward_components = compute_shaped_reward(
+            total_system_cost,
+            total_backlog,
+            bullwhip_overall,
+            self.config.reward,
+        )
+
+        post_states = {
+            node.name: self.get_state_dict(node.name)
+            for node in self.nodes
+        }
+
+        for node in self.nodes:
+            self.trajectories.append({
+                "week": current_week,
+                "agent": node.name,
+                "state": dict(pre_states[node.name]),
+                "action": int(actions.get(node.name, 0)),
+                "reward": float(reward),
+                "next_state": dict(post_states[node.name]),
+                "cost": float(total_system_cost),
+                "bullwhip": bullwhip_overall,
+            })
+
+        self.history["reward"].append(reward)
 
         # ----------------------------------------
         # STEP 7 — Check Termination
@@ -298,7 +424,10 @@ class BeerGame:
             "week": self.week,
             "customer_demand": customer_demand,
             "total_system_cost": total_system_cost,
-            "bullwhip": bullwhip_metrics
+            "total_backlog": total_backlog,
+            "bullwhip": bullwhip_metrics,
+            "reward": reward,
+            "reward_components": reward_components,
         }
 
         next_state = self.get_state()
@@ -342,6 +471,10 @@ class BeerGame:
         self.history["bullwhip"].append(
             self.compute_bullwhip()
         )
+
+    def get_trajectories(self):
+        """Return rollout trajectories for RL training and analysis."""
+        return list(self.trajectories)
 
     def compute_bullwhip(self):
         if len(self.history["demand"]) < 2:
