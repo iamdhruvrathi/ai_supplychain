@@ -215,3 +215,129 @@ def generate_bullwhip_boxplots(results_dir: str, output_dir: str) -> None:
     fig.savefig(str(png_path), bbox_inches="tight", dpi=200)
     fig.savefig(str(pdf_path), bbox_inches="tight")
     plt.close(fig)
+
+
+def _load_orders_for_boxplots(results_dir: str):
+    import json
+    from pathlib import Path
+
+    results_path = Path(results_dir)
+    rollouts = list(results_path.rglob("*rollouts*.jsonl"))
+    if not rollouts:
+        rollouts = list(results_path.rglob("*.jsonl"))
+    if not rollouts:
+        raise FileNotFoundError(f"No trajectory JSONL files found under {results_dir}")
+
+    echelons = ("Retailer", "Wholesaler", "Distributor", "Factory")
+    orders = {e: {} for e in echelons}
+
+    for path in rollouts:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                agent = rec.get("agent") or rec.get("agent_role") or rec.get("role")
+                action = rec.get("action")
+                week = rec.get("week") if "week" in rec else rec.get("t", rec.get("time"))
+                if agent is None or action is None or week is None:
+                    continue
+                agent_name = str(agent).strip().capitalize()
+                if agent_name not in echelons:
+                    continue
+                try:
+                    week_num = int(float(week))
+                    order_qty = int(float(action))
+                except (TypeError, ValueError):
+                    continue
+                orders[agent_name].setdefault(week_num, []).append(order_qty)
+
+    raw_weeks = sorted({w for by_week in orders.values() for w in by_week})
+    if not raw_weeks:
+        raise RuntimeError(f"No order data found under {results_dir}")
+    return echelons, orders, raw_weeks
+
+
+def generate_figure3_boxplots(
+    results_10: str,
+    results_100: str,
+    output_dir: str,
+) -> None:
+    """Generate Figure 3-style two-panel repeated-sampling boxplots."""
+    _require_plt()
+    from pathlib import Path
+    from matplotlib.patches import Patch
+
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    panels = [
+        ("Majority Vote of 10 Samples", results_10),
+        ("Majority Vote of 100 Samples", results_100),
+    ]
+    colors = {
+        "Retailer": "#4C78A8",
+        "Wholesaler": "#F58518",
+        "Distributor": "#54A24B",
+        "Factory": "#E45756",
+    }
+    offsets = {
+        "Retailer": -0.27,
+        "Wholesaler": -0.09,
+        "Distributor": 0.09,
+        "Factory": 0.27,
+    }
+
+    fig, axes = plt.subplots(2, 1, figsize=(14, 9), sharex=False)
+
+    for ax, (title, results_dir) in zip(axes, panels):
+        echelons, orders, raw_weeks = _load_orders_for_boxplots(results_dir)
+        display_offset = 1 if min(raw_weeks) == 0 else 0
+        positions = list(range(1, len(raw_weeks) + 1))
+        labels = [str(w + display_offset) for w in raw_weeks]
+
+        for echelon in echelons:
+            data = [orders[echelon].get(week, [np.nan]) for week in raw_weeks]
+            box_positions = [pos + offsets[echelon] for pos in positions]
+            bp = ax.boxplot(
+                data,
+                positions=box_positions,
+                widths=0.16,
+                patch_artist=True,
+                showfliers=True,
+                manage_ticks=False,
+            )
+            for patch in bp["boxes"]:
+                patch.set_facecolor(colors[echelon])
+                patch.set_alpha(0.65)
+            for median in bp["medians"]:
+                median.set_color("#222222")
+
+        ax.text(
+            0.02,
+            0.90,
+            title,
+            transform=ax.transAxes,
+            fontsize=14,
+            fontweight="bold",
+        )
+        ax.set_ylabel("Order quantity")
+        ax.set_xticks(positions)
+        ax.set_xticklabels(labels)
+        ax.set_xlabel("Week")
+        ax.grid(True, axis="y", alpha=0.25)
+        handles = [
+            Patch(facecolor=colors[e], edgecolor="black", alpha=0.65, label=e.lower())
+            for e in echelons
+        ]
+        ax.legend(handles=handles, title="Player", loc="upper left", bbox_to_anchor=(1.01, 1.0))
+
+    fig.tight_layout()
+    png_path = out_path / "figure3_majority_vote_boxplots.png"
+    pdf_path = out_path / "figure3_majority_vote_boxplots.pdf"
+    fig.savefig(str(png_path), bbox_inches="tight", dpi=200)
+    fig.savefig(str(pdf_path), bbox_inches="tight")
+    plt.close(fig)

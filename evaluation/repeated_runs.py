@@ -61,6 +61,7 @@ def run_single_episode(
     run_id: int = 0,
     llm_agents: Optional[Dict[str, LLMAgent]] = None,
     progress: str = "none",
+    n_samples: int = 1,
 ) -> Dict[str, Any]:
     """Run one episode; demand path fixed by config.demand_seed."""
     random.seed(config.demand_seed if config.demand_seed is not None else run_id)
@@ -76,7 +77,17 @@ def run_single_episode(
         for name in ECHELONS:
             if llm_agents and name in llm_agents:
                 fallback_order = policy_fn(env, name, states[name])
-                raw = llm_agents[name].generate_order(states[name], fallback=fallback_order)
+                if n_samples > 1:
+                    raw = llm_agents[name].generate_order_majority_vote(
+                        states[name],
+                        n_samples=n_samples,
+                        fallback=fallback_order,
+                    )
+                else:
+                    raw = llm_agents[name].generate_order(
+                        states[name],
+                        fallback=fallback_order,
+                    )
                 policy_type = "llm"
             else:
                 raw = policy_fn(env, name, states[name])
@@ -126,6 +137,7 @@ def run_repeated_experiment(
     temperature: float = 0.2,
     num_predict: int = 8,
     progress: str = "run",
+    n_samples: int = 1,
 ) -> Dict[str, Any]:
     """Execute R repeated runs and compute paper-aligned metrics."""
     os.makedirs(save_dir, exist_ok=True)
@@ -240,6 +252,7 @@ def run_repeated_experiment(
                 run_id=r,
                 llm_agents=llm_agents,
                 progress=progress,
+                n_samples=n_samples,
             )
         except KeyboardInterrupt:
             print(f"\nInterrupted. Keeping {len(episodes)} completed run(s).", flush=True)
@@ -288,6 +301,7 @@ if __name__ == "__main__":
     parser.add_argument("--progress", choices=("none", "run", "week"), default="week")
     parser.add_argument("--output-dir", type=str, default="results/repeated_runs")
     parser.add_argument("--demand-pattern", choices=("mit", "seeded", "random"), default="mit")
+    parser.add_argument("--n-samples", type=int, default=1)
     args = parser.parse_args()
 
     if args.config:
@@ -321,5 +335,6 @@ if __name__ == "__main__":
         temperature=args.temperature,
         num_predict=args.num_predict,
         progress=args.progress,
+        n_samples=max(1, args.n_samples),
     )
     print(f"Mean cost: {report['cost']['mean']:.2f}, CV: {report['reliability'].get('coefficient_of_variation')}")

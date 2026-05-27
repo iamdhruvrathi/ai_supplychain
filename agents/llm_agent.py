@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from typing import Any, Dict, Optional
 
 import requests
@@ -178,6 +179,14 @@ class LLMAgent:
             )
             return default
 
+    def parse_order_optional(self, response_text: Optional[str]) -> Optional[int]:
+        """Parse an order, returning None when no integer is found."""
+        sentinel = -10**9
+        parsed = self.parse_order(response_text, default=sentinel)
+        if parsed == sentinel:
+            return None
+        return parsed
+
     def generate_order(
         self,
         state: Dict[str, Any],
@@ -187,3 +196,27 @@ class LLMAgent:
         prompt = self.build_prompt(state)
         response = self.query_model(prompt)
         return self.parse_order(response, default=fallback)
+
+    def generate_order_majority_vote(
+        self,
+        state: Dict[str, Any],
+        n_samples: int,
+        fallback: int = 0,
+    ) -> int:
+        """Sample n orders and return the most common parsed value."""
+        prompt = self.build_prompt(state)
+        parsed_values = []
+
+        for _ in range(max(1, int(n_samples))):
+            response = self.query_model(prompt)
+            parsed = self.parse_order_optional(response)
+            if parsed is not None:
+                parsed_values.append(parsed)
+
+        if not parsed_values:
+            return self._clamp_order(fallback)
+
+        counts = Counter(parsed_values)
+        max_count = max(counts.values())
+        winners = [value for value, count in counts.items() if count == max_count]
+        return self._clamp_order(min(winners))

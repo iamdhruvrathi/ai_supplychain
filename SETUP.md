@@ -46,6 +46,22 @@ python evaluation/repeated_runs.py --weeks 5 --runs 2 --model qwen2.5:1.5b --pro
 python experiments/run_figure2.py --results results/qwen25_debug --output plots/
 ```
 
+## Figure 3 Majority Vote
+
+Start tiny:
+
+```powershell
+python experiments/run_majority_vote.py --weeks 5 --runs 2 --model qwen2.5:1.5b --n-samples 10 --output-dir results/fig3_qwen25_n10_debug --progress run
+python experiments/run_majority_vote.py --weeks 5 --runs 2 --model qwen2.5:1.5b --n-samples 100 --output-dir results/fig3_qwen25_n100_debug --progress run
+python experiments/run_figure3.py --results-10 results/fig3_qwen25_n10_debug --results-100 results/fig3_qwen25_n100_debug --output plots/
+```
+
+The output is:
+
+```text
+plots/figure3_majority_vote_boxplots.png
+```
+
 ## Faster Development Settings
 
 ```powershell
