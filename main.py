@@ -62,7 +62,14 @@ def run_baseline():
     return result.returncode
 
 
-def run_repeated(weeks: int = 30, runs: int = 10, offline: bool = False):
+def run_repeated(
+    weeks: int = 30,
+    runs: int = 10,
+    offline: bool = False,
+    model: str | None = None,
+    output_dir: str = "results/repeated_runs",
+    progress: str = "week",
+):
     """Run repeated-run reliability experiment (paper Section 4)."""
     print("=" * 60)
     print("Running Repeated-Run Experiment")
@@ -72,7 +79,12 @@ def run_repeated(weeks: int = 30, runs: int = 10, offline: bool = False):
         "evaluation/repeated_runs.py",
         "--weeks", str(weeks),
         "--runs", str(runs),
+        "--demand-pattern", "mit",
+        "--progress", progress,
+        "--output-dir", output_dir,
     ]
+    if model:
+        cmd.extend(["--model", model])
     if offline:
         cmd.append("--offline")
     result = subprocess.run(cmd, cwd=project_root)
@@ -193,7 +205,8 @@ def show_help():
     print("  help            Show this help message")
     print("\nExamples:")
     print("  python main.py test-llm")
-    print("  python main.py llm --weeks 50")
+    print("  python main.py llm --weeks 10 --model qwen2.5:1.5b")
+    print("  python main.py repeated --weeks 10 --runs 3 --model qwen2.5:1.5b")
     print("  python main.py demo")
 
 
@@ -222,8 +235,18 @@ def main():
         parser.add_argument("--weeks", type=int, default=30)
         parser.add_argument("--runs", type=int, default=10)
         parser.add_argument("--offline", action="store_true")
+        parser.add_argument("--model", type=str, default=None)
+        parser.add_argument("--output-dir", type=str, default="results/repeated_runs")
+        parser.add_argument("--progress", choices=("none", "run", "week"), default="week")
         args, _ = parser.parse_known_args(sys.argv[2:])
-        return run_repeated(weeks=args.weeks, runs=args.runs, offline=args.offline)
+        return run_repeated(
+            weeks=args.weeks,
+            runs=args.runs,
+            offline=args.offline,
+            model=args.model,
+            output_dir=args.output_dir,
+            progress=args.progress,
+        )
     elif command == "benchmark":
         parser = argparse.ArgumentParser(add_help=False)
         parser.add_argument("--config", type=str, default="configs/default_experiment.yaml")

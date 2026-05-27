@@ -26,6 +26,8 @@ class LLMAgent:
         max_order: int = 100,
         temperature: float = 0.2,
         timeout: float = 120.0,
+        num_predict: int = 8,
+        keep_alive: str = "30m",
     ) -> None:
         self.agent_name = agent_name
         self.model_name = model_name
@@ -33,6 +35,8 @@ class LLMAgent:
         self.max_order = max_order
         self.temperature = temperature
         self.timeout = timeout
+        self.num_predict = int(num_predict)
+        self.keep_alive = keep_alive
 
     def _orchestrator_context(self, state: Dict[str, Any]) -> str:
         """Append curated shared information when orchestrator mode is active."""
@@ -73,6 +77,7 @@ class LLMAgent:
             "Rules:\n"
             "* Return ONLY a single integer.\n"
             "* No explanation.\n"
+            "* No units, markdown, JSON, or extra text.\n"
             f"* Order must be between 0 and {self.max_order}.\n"
         )
         return prompt
@@ -85,7 +90,11 @@ class LLMAgent:
                 "model": self.model_name,
                 "prompt": prompt,
                 "stream": False,
-                "options": {"temperature": self.temperature},
+                "keep_alive": self.keep_alive,
+                "options": {
+                    "temperature": self.temperature,
+                    "num_predict": self.num_predict,
+                },
             }
             response = requests.post(
                 url,

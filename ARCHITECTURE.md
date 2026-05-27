@@ -80,12 +80,12 @@ Customer ──demand──► Retailer ──order──► Wholesaler ──or
 
 Each echelon is a `SupplyChainNode` with:
 
-| Parameter | Default | Role |
-|-----------|---------|------|
-| `initial_inventory` | 20 | Starting on-hand stock |
-| `lead_time` | 2 | FIFO pipeline length (weeks until shipment arrives) |
-| `holding_cost` | 1.0 | Cost per unit in inventory per week |
-| `backlog_cost` | 2.0 | Cost per unit of unmet demand per week |
+| Parameter           | Default | Role                                                |
+| ------------------- | ------- | --------------------------------------------------- |
+| `initial_inventory` | 20      | Starting on-hand stock                              |
+| `lead_time`         | 2       | FIFO pipeline length (weeks until shipment arrives) |
+| `holding_cost`      | 1.0     | Cost per unit in inventory per week                 |
+| `backlog_cost`      | 2.0     | Cost per unit of unmet demand per week              |
 
 ### Weekly `step()` sequence
 
@@ -134,15 +134,15 @@ sequenceDiagram
 
 Dataclass encapsulating one echelon.
 
-| Method | Purpose |
-|--------|---------|
-| `reset()` | Restore inventory, empty backlog, zero pipeline |
-| `receive_shipment()` | FIFO pop → inventory |
-| `add_incoming_shipment(q)` | FIFO push (arrives after `lead_time` weeks) |
-| `fulfill_demand(d)` | Ship min(inventory, demand+backlog); remainder → backlog |
-| `place_order(q)` | Set `last_order`, append to `order_history` |
-| `compute_costs()` | `inventory * holding_cost + backlog * backlog_cost` |
-| `get_state()` | Raw dict: inventory, backlog, pipeline list, last_order |
+| Method                     | Purpose                                                  |
+| -------------------------- | -------------------------------------------------------- |
+| `reset()`                  | Restore inventory, empty backlog, zero pipeline          |
+| `receive_shipment()`       | FIFO pop → inventory                                     |
+| `add_incoming_shipment(q)` | FIFO push (arrives after `lead_time` weeks)              |
+| `fulfill_demand(d)`        | Ship min(inventory, demand+backlog); remainder → backlog |
+| `place_order(q)`           | Set `last_order`, append to `order_history`              |
+| `compute_costs()`          | `inventory * holding_cost + backlog * backlog_cost`      |
+| `get_state()`              | Raw dict: inventory, backlog, pipeline list, last_order  |
 
 ### `BeerGame` (`simulator/beer_game.py`)
 
@@ -162,16 +162,16 @@ BeerGame(
 
 **Core methods:**
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `reset()` | state | New episode; clears history and trajectories |
-| `step(actions)` | `(next_state, reward, done, info)` | Advance one week |
-| `get_state(agent_name=None)` | dict | Per-agent RL dict or all raw node states |
-| `get_state_dict(agent_name)` | dict | RL observation for one echelon |
-| `get_all_states()` | dict | All echelons' RL observations |
-| `get_history()` | dict | Time series for analysis |
-| `get_trajectories()` | list | Rollout transitions |
-| `compute_bullwhip()` | dict | Per-agent and overall ratios |
+| Method                       | Returns                            | Description                                  |
+| ---------------------------- | ---------------------------------- | -------------------------------------------- |
+| `reset()`                    | state                              | New episode; clears history and trajectories |
+| `step(actions)`              | `(next_state, reward, done, info)` | Advance one week                             |
+| `get_state(agent_name=None)` | dict                               | Per-agent RL dict or all raw node states     |
+| `get_state_dict(agent_name)` | dict                               | RL observation for one echelon               |
+| `get_all_states()`           | dict                               | All echelons' RL observations                |
+| `get_history()`              | dict                               | Time series for analysis                     |
+| `get_trajectories()`         | list                               | Rollout transitions                          |
+| `compute_bullwhip()`         | dict                               | Per-agent and overall ratios                 |
 
 **Plotting** (requires matplotlib): `plot_orders_vs_demand`, `plot_inventory`, `plot_backlog`, `plot_inventory_and_backlog`.
 
@@ -192,22 +192,22 @@ flowchart LR
     X --> A[clamped integer 0..max_order]
 ```
 
-| Method | Description |
-|--------|-------------|
-| `build_prompt(state)` | Natural-language prompt from local observation |
-| `query_model(prompt)` | HTTP POST to Ollama; returns response text or `None` |
-| `parse_order(text, default)` | Regex extraction; reasoning-model safe |
-| `generate_order(state, fallback)` | Full pipeline: prompt → query → parse |
+| Method                            | Description                                          |
+| --------------------------------- | ---------------------------------------------------- |
+| `build_prompt(state)`             | Natural-language prompt from local observation       |
+| `query_model(prompt)`             | HTTP POST to Ollama; returns response text or `None` |
+| `parse_order(text, default)`      | Regex extraction; reasoning-model safe               |
+| `generate_order(state, fallback)` | Full pipeline: prompt → query → parse                |
 
 **Configuration:**
 
-| Parameter | Default |
-|-----------|---------|
-| `model_name` | `qwen:1.5b` |
-| `ollama_url` | `http://localhost:11434` |
-| `max_order` | 100 |
-| `temperature` | 0.2 |
-| `timeout` | 120.0 seconds |
+| Parameter     | Default                  |
+| ------------- | ------------------------ |
+| `model_name`  | `qwen:1.5b`              |
+| `ollama_url`  | `http://localhost:11434` |
+| `max_order`   | 100                      |
+| `temperature` | 0.2                      |
+| `timeout`     | 120.0 seconds            |
 
 **Parsing strategy** (for reasoning models):
 
@@ -251,11 +251,11 @@ Episode length: `4 agents × max_weeks` transitions.
 R_t = -\big(\alpha \cdot C_t + \beta \cdot B_t + \gamma \cdot L_t\big)
 \]
 
-| Symbol | Source | Meaning |
-|--------|--------|---------|
-| \(C_t\) | `total_system_cost` | Sum of holding + backlog costs all nodes |
+| Symbol  | Source                | Meaning                                                      |
+| ------- | --------------------- | ------------------------------------------------------------ |
+| \(C_t\) | `total_system_cost`   | Sum of holding + backlog costs all nodes                     |
 | \(B_t\) | `bullwhip["overall"]` | Mean order-variance / demand-variance ratio (0 if undefined) |
-| \(L_t\) | `sum(node.backlog)` | Total system backlog |
+| \(L_t\) | `sum(node.backlog)`   | Total system backlog                                         |
 
 Defaults: `alpha=1.0`, `beta=0.1`, `gamma=0.5`.
 
@@ -288,7 +288,7 @@ info = {
 
 ### Agent bullwhip (`metrics/agent_bullwhip.py`) — paper Definition 1
 
-Run-to-run variance \(\sigma^2_{k,t}\), cross-echelon \(\Psi_k(t)\), intertemporal \(\Phi_k(t)\).  
+Run-to-run variance \(\sigma^2\_{k,t}\), cross-echelon \(\Psi_k(t)\), intertemporal \(\Phi_k(t)\).  
 Computed from `evaluation/repeated_runs.py` over R episodes with fixed `demand_seed`.
 
 ### Reliability (`metrics/reliability.py`)
@@ -304,7 +304,7 @@ Mean, std, confidence intervals across repeated runs.
 Per-agent ratio:
 
 \[
-BW_k = \frac{\mathrm{Var}(\text{orders}_k)}{\mathrm{Var}(\text{customer demand})}
+BW_k = \frac{\mathrm{Var}(\text{orders}\_k)}{\mathrm{Var}(\text{customer demand})}
 \]
 
 - Uses population variance (`statistics.pvariance`).
@@ -315,13 +315,13 @@ Also available as standalone functions: `bullwhip_ratio()`, `bullwhip_per_agent(
 
 ### Stability (`metrics/stability.py`)
 
-| Function | Output |
-|----------|--------|
-| `order_variance(history)` | Per-agent order variance |
-| `inventory_variance(history)` | Per-agent inventory variance |
-| `backlog_variance(history)` | Per-agent backlog variance |
+| Function                          | Output                                      |
+| --------------------------------- | ------------------------------------------- |
+| `order_variance(history)`         | Per-agent order variance                    |
+| `inventory_variance(history)`     | Per-agent inventory variance                |
+| `backlog_variance(history)`       | Per-agent backlog variance                  |
 | `cumulative_instability(history)` | Mean across agents of weighted variance sum |
-| `stability_summary(history)` | All of the above in one dict |
+| `stability_summary(history)`      | All of the above in one dict                |
 
 Used by `evaluation/compare_models.py` for benchmarking.
 
@@ -331,15 +331,15 @@ Used by `evaluation/compare_models.py` for benchmarking.
 
 ### Entry points
 
-| Script | Role |
-|--------|------|
-| `main.py` | CLI wrapper for tests, demo, baseline, llm, compare |
-| `experiments/llm_experiment.py` | Single-model LLM run + plots |
-| `experiments/baseline_experiment.py` | random / base_stock / moving_avg × N seeds |
-| `evaluation/compare_models.py` | qwen2.5 vs deepseek-r1 vs base_stock × N repeats |
-| `experiments/test_llm_agent.py` | Unit tests |
-| `experiments/test_state_api.py` | State API smoke test |
-| `experiments/smoke_test.py` | Minimal integration |
+| Script                               | Role                                                |
+| ------------------------------------ | --------------------------------------------------- |
+| `main.py`                            | CLI wrapper for tests, demo, baseline, llm, compare |
+| `experiments/llm_experiment.py`      | Single-model LLM run + plots                        |
+| `experiments/baseline_experiment.py` | random / base_stock / moving_avg × N seeds          |
+| `evaluation/compare_models.py`       | qwen2.5 vs deepseek-r1 vs base_stock × N repeats    |
+| `experiments/test_llm_agent.py`      | Unit tests                                          |
+| `experiments/test_state_api.py`      | State API smoke test                                |
+| `experiments/smoke_test.py`          | Minimal integration                                 |
 
 ### LLM experiment loop (`experiments/llm_experiment.py`)
 
@@ -372,11 +372,11 @@ average weekly series → plots/comparison/*.png
 
 ### Classical policies (`policies/`)
 
-| Module | Function | Policy |
-|--------|----------|--------|
-| `base_stock.py` | `base_stock_order(state, target=20)` | Order-up-to target level |
+| Module              | Function                                           | Policy                             |
+| ------------------- | -------------------------------------------------- | ---------------------------------- |
+| `base_stock.py`     | `base_stock_order(state, target=20)`               | Order-up-to target level           |
 | `moving_average.py` | `moving_average_order(state, demand_history, ...)` | Demand forecast from moving window |
-| `random_policy.py` | `random_order(state, low, high)` | Uniform random order |
+| `random_policy.py`  | `random_order(state, low, high)`                   | Uniform random order               |
 
 `policies/classical_policies.py` duplicates base-stock and moving-average for legacy imports.
 
@@ -400,12 +400,12 @@ average weekly series → plots/comparison/*.png
 
 **Downstream demand mapping:**
 
-| Agent | `last_customer_demand` |
-|-------|------------------------|
-| Retailer | Last customer demand |
-| Wholesaler | Retailer's `last_order` |
-| Distributor | Wholesaler's `last_order` |
-| Factory | Distributor's `last_order` |
+| Agent       | `last_customer_demand`     |
+| ----------- | -------------------------- |
+| Retailer    | Last customer demand       |
+| Wholesaler  | Retailer's `last_order`    |
+| Distributor | Wholesaler's `last_order`  |
+| Factory     | Distributor's `last_order` |
 
 ### `step(actions)` contract
 
@@ -536,10 +536,10 @@ text = data.get("response", data.get("text", "")).strip()
 
 ### Error handling
 
-| Condition | Behavior |
-|-----------|----------|
-| Connection refused | Log error; `query_model` returns `None` |
-| HTTP / timeout error | Log error; `None` |
+| Condition            | Behavior                                     |
+| -------------------- | -------------------------------------------- |
+| Connection refused   | Log error; `query_model` returns `None`      |
+| HTTP / timeout error | Log error; `None`                            |
 | Unparseable response | `parse_order` returns `fallback` (default 0) |
 
 Each echelon makes **one API call per week** → 4 × `max_weeks` calls per experiment.
@@ -550,15 +550,15 @@ Each echelon makes **one API call per week** → 4 × `max_weeks` calls per expe
 
 **Not implemented.** Reserved design based on current hooks:
 
-| Component | Current state | Planned use |
-|-----------|---------------|-------------|
-| `get_trajectories()` | ✓ Populated each step | PPO / GRPO rollout buffer |
-| Shaped reward | ✓ Configurable α, β, γ | Training signal |
-| `get_state_dict()` | ✓ Fixed schema | Policy network input |
-| `train/` | Empty directory | Training scripts |
-| `env/` | Empty directory | Gymnasium wrapper |
-| Gymnasium API | Not present | `gymnasium.Env` adapter over `BeerGame` |
-| PPO / GRPO | Not present | Per-echelon or centralized training |
+| Component            | Current state          | Planned use                             |
+| -------------------- | ---------------------- | --------------------------------------- |
+| `get_trajectories()` | ✓ Populated each step  | PPO / GRPO rollout buffer               |
+| Shaped reward        | ✓ Configurable α, β, γ | Training signal                         |
+| `get_state_dict()`   | ✓ Fixed schema         | Policy network input                    |
+| `train/`             | Empty directory        | Training scripts                        |
+| `env/`               | Empty directory        | Gymnasium wrapper                       |
+| Gymnasium API        | Not present            | `gymnasium.Env` adapter over `BeerGame` |
+| PPO / GRPO           | Not present            | Per-echelon or centralized training     |
 
 ### Anticipated PPO loop (conceptual)
 
@@ -591,3 +591,192 @@ for episode:
 ---
 
 For installation and commands, see [SETUP.md](SETUP.md). For a project summary, see [README.md](README.md).
+
+---
+
+# Architecture
+
+This is the short version of how the code fits together.
+
+## One-Sentence Summary
+
+The project runs a four-role Beer Game, lets either simple policies or LLM agents place orders, records every decision, and turns repeated runs into reliability metrics and box plots.
+
+## Core Flow
+
+```text
+policy or LLM agent
+        |
+        v
+simulator/beer_game.py
+        |
+        v
+history + trajectories
+        |
+        v
+metrics + plots
+```
+
+## Main Components
+
+| Component       | File or folder                | Job                                                         |
+| --------------- | ----------------------------- | ----------------------------------------------------------- |
+| Simulator       | `simulator/beer_game.py`      | Runs the Beer Game week by week                             |
+| Node            | `simulator/node.py`           | Stores one role's inventory, backlog, shipments, and orders |
+| LLM agent       | `agents/llm_agent.py`         | Builds a prompt, calls Ollama, parses an order number       |
+| Constraints     | `agents/constraints.py`       | Clips or adjusts unsafe orders                              |
+| Simple policies | `policies/`                   | Base-stock, moving-average, random policies                 |
+| Repeated runs   | `evaluation/repeated_runs.py` | Runs the same experiment many times                         |
+| Plotting        | `evaluation/plotting.py`      | Generates research plots and Figure 2-style box plots       |
+| Metrics         | `metrics/`                    | Cost, reliability, bullwhip, agent bullwhip                 |
+| Wrappers        | `experiments/`                | Friendly scripts for common tasks                           |
+
+## Weekly Simulator Step
+
+Each call to `BeerGame.step(actions)` does this:
+
+```text
+1. Receive shipments already in the pipeline
+2. Generate customer demand
+3. Fulfill demand and update backlog
+4. Ship products downstream
+5. Add factory production
+6. Apply each role's new order
+7. Compute cost
+8. Record history
+9. Record trajectories
+10. Move to the next week
+```
+
+The action format is:
+
+```python
+actions = {
+    "Retailer": 7,
+    "Wholesaler": 9,
+    "Distributor": 10,
+    "Factory": 12,
+}
+```
+
+## What Gets Recorded
+
+The simulator records two useful things.
+
+### 1. History
+
+Used for metrics:
+
+```text
+demand
+orders
+inventory
+backlog
+cost
+bullwhip
+reward
+```
+
+### 2. Trajectories
+
+Used for learning and Figure 2:
+
+```python
+{
+    "week": 1,
+    "agent": "Retailer",
+    "state": {...},
+    "action": 7,
+    "reward": -31.0,
+    "next_state": {...}
+}
+```
+
+The boxplot script mainly reads:
+
+```text
+week
+agent
+action
+```
+
+## Figure 2 Pipeline
+
+```text
+1. Run repeated episodes
+   evaluation/repeated_runs.py
+
+2. Save all decisions
+   results/repeated_runs/trajectories/rollouts.jsonl
+
+3. Aggregate orders by role and week
+   evaluation/plotting.py
+
+4. Draw box plots
+   plots/figure2_bullwhip_boxplots.png
+```
+
+Command:
+
+```powershell
+python evaluation/repeated_runs.py --weeks 30 --runs 30 --model qwen2.5:1.5b
+python experiments/run_figure2.py --results results/repeated_runs --output plots/
+```
+
+## Classical Bullwhip vs Agent Bullwhip
+
+| Concept            | Variance measured across       | Meaning                                 |
+| ------------------ | ------------------------------ | --------------------------------------- |
+| Classical bullwhip | Time inside one run            | Demand/order variability amplification  |
+| Agent bullwhip     | Repeated runs at the same week | AI decision unreliability amplification |
+
+For the paper's Figure 2, focus on **agent bullwhip**.
+
+## LLM Agent Flow
+
+```text
+state dict
+   |
+   v
+prompt text
+   |
+   v
+Ollama API
+   |
+   v
+raw model response
+   |
+   v
+parse integer order
+   |
+   v
+clamp to allowed range
+```
+
+If parsing fails, the agent falls back to a default order.
+
+## Where To Start Reading Code
+
+Read in this order:
+
+1. `experiments/run_figure2.py`
+2. `evaluation/plotting.py`
+3. `evaluation/repeated_runs.py`
+4. `simulator/beer_game.py`
+5. `agents/llm_agent.py`
+
+That path follows the actual replication workflow from output back to the simulator.
+
+## Things Not Implemented Yet
+
+These ideas appear in the research direction but are not finished replication components:
+
+```text
+human baseline comparison
+exact paper model matching
+GRPO/PPO training
+Gymnasium wrapper
+full theoretical transfer-function analysis
+```
+
+Treat them as future learning topics, not as prerequisites for the current Figure 2 goal.

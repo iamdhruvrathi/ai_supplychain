@@ -11,6 +11,7 @@ from simulator.config import (
     RewardConfig,
     SimulationConfig,
 )
+from simulator.demand import mit_beer_game_demand_path
 
 try:
     import yaml
@@ -47,11 +48,18 @@ def config_from_dict(data: Dict[str, Any]) -> SimulationConfig:
         panic_max_order=cons.get("panic_max_order"),
     )
 
+    weeks = int(exp.get("weeks", 30))
+    fixed_demand_path = exp.get("fixed_demand_path")
+    demand_pattern = str(exp.get("demand_pattern", "")).lower()
+    if fixed_demand_path is None and demand_pattern in {"mit", "mit_beer_game"}:
+        fixed_demand_path = mit_beer_game_demand_path(weeks)
+
     return SimulationConfig(
-        max_weeks=int(exp.get("weeks", 30)),
+        max_weeks=weeks,
         lead_time=int(exp.get("lead_time", 2)),
         initial_inventory=int(exp.get("initial_inventory", 20)),
         demand_seed=exp.get("demand_seed"),
+        fixed_demand_path=fixed_demand_path,
         verbose=bool(exp.get("verbose", False)),
         orchestrator_mode=mode,
         constraints=constraints,

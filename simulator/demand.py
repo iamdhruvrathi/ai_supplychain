@@ -8,6 +8,11 @@ from typing import List, Optional
 from simulator.config import SimulationConfig
 
 
+def mit_beer_game_demand_path(max_weeks: int) -> List[int]:
+    """Standard MIT Beer Game demand pattern: 4 for four weeks, then 8."""
+    return [4 if week < 4 else 8 for week in range(max(0, max_weeks))]
+
+
 class DemandGenerator:
     """Generates retailer demand; supports fixed paths across repeated runs."""
 

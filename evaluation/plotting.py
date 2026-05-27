@@ -116,3 +116,102 @@ def generate_research_plots(
             phi,
             os.path.join(plot_dir, "psi_phi_over_time.png"),
         )
+
+
+def generate_bullwhip_boxplots(results_dir: str, output_dir: str) -> None:
+    """Generate Figure 2-style order boxplots from rollout JSONL files."""
+    _require_plt()
+    import json
+    from pathlib import Path
+
+    results_path = Path(results_dir)
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    rollouts = list(results_path.rglob("*rollouts*.jsonl"))
+    if not rollouts:
+        rollouts = list(results_path.rglob("*.jsonl"))
+    if not rollouts:
+        raise FileNotFoundError(f"No trajectory JSONL files found under {results_dir}")
+
+    echelons = ("Retailer", "Wholesaler", "Distributor", "Factory")
+    orders = {e: {} for e in echelons}
+
+    for path in rollouts:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                agent = rec.get("agent") or rec.get("agent_role") or rec.get("role")
+                action = rec.get("action")
+                if "week" in rec:
+                    week = rec.get("week")
+                elif "t" in rec:
+                    week = rec.get("t")
+                else:
+                    week = rec.get("time")
+
+                if agent is None or action is None or week is None:
+                    continue
+
+                agent_name = str(agent).strip().capitalize()
+                if agent_name not in echelons:
+                    short = {
+                        "r": "Retailer",
+                        "w": "Wholesaler",
+                        "d": "Distributor",
+                        "f": "Factory",
+                    }
+                    agent_name = short.get(str(agent).strip().lower(), agent_name)
+                if agent_name not in echelons:
+                    continue
+
+                try:
+                    week_num = int(float(week))
+                    order_qty = int(float(action))
+                except (TypeError, ValueError):
+                    continue
+
+                orders[agent_name].setdefault(week_num, []).append(order_qty)
+
+    raw_weeks = sorted({w for by_week in orders.values() for w in by_week})
+    if not raw_weeks:
+        raise RuntimeError("No order data found in rollout files")
+
+    display_offset = 1 if min(raw_weeks) == 0 else 0
+    positions = list(range(1, len(raw_weeks) + 1))
+    labels = [str(w + display_offset) for w in raw_weeks]
+
+    fig, axes = plt.subplots(len(echelons), 1, figsize=(12, 3 * len(echelons)), sharex=True)
+
+    for idx, echelon in enumerate(echelons):
+        ax = axes[idx]
+        data = [orders[echelon].get(week, []) for week in raw_weeks]
+        data_for_plot = [values if values else [np.nan] for values in data]
+        ax.boxplot(
+            data_for_plot,
+            positions=positions,
+            widths=0.6,
+            showfliers=True,
+            patch_artist=True,
+        )
+        ax.set_ylabel(f"{echelon}\nOrder Qty")
+        ax.grid(True, axis="y")
+        if idx == 0:
+            ax.set_title("Figure 2: Order Quantity Distributions by Week and Echelon")
+
+    axes[-1].set_xlabel("Week")
+    axes[-1].set_xticks(positions)
+    axes[-1].set_xticklabels(labels)
+    fig.tight_layout()
+
+    png_path = out_path / "figure2_bullwhip_boxplots.png"
+    pdf_path = out_path / "figure2_bullwhip_boxplots.pdf"
+    fig.savefig(str(png_path), bbox_inches="tight", dpi=200)
+    fig.savefig(str(pdf_path), bbox_inches="tight")
+    plt.close(fig)
