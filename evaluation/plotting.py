@@ -187,27 +187,50 @@ def generate_bullwhip_boxplots(results_dir: str, output_dir: str) -> None:
     positions = list(range(1, len(raw_weeks) + 1))
     labels = [str(w + display_offset) for w in raw_weeks]
 
-    fig, axes = plt.subplots(len(echelons), 1, figsize=(12, 3 * len(echelons)), sharex=True)
+    fig, ax = plt.subplots(figsize=(14, 7))
 
-    for idx, echelon in enumerate(echelons):
-        ax = axes[idx]
+    colors = {
+        "Retailer": "#4C78A8",
+        "Wholesaler": "#F58518",
+        "Distributor": "#54A24B",
+        "Factory": "#E45756",
+    }
+    offsets = {
+        "Retailer": -0.33,
+        "Wholesaler": -0.11,
+        "Distributor": 0.11,
+        "Factory": 0.33,
+    }
+    width = 0.18
+
+    for echelon in echelons:
         data = [orders[echelon].get(week, []) for week in raw_weeks]
         data_for_plot = [values if values else [np.nan] for values in data]
-        ax.boxplot(
+        box_positions = [pos + offsets[echelon] for pos in positions]
+        bp = ax.boxplot(
             data_for_plot,
-            positions=positions,
-            widths=0.6,
-            showfliers=True,
+            positions=box_positions,
+            widths=width,
             patch_artist=True,
+            showfliers=True,
+            manage_ticks=False,
         )
-        ax.set_ylabel(f"{echelon}\nOrder Qty")
-        ax.grid(True, axis="y")
-        if idx == 0:
-            ax.set_title("Figure 2: Order Quantity Distributions by Week and Echelon")
+        for patch in bp["boxes"]:
+            patch.set_facecolor(colors[echelon])
+            patch.set_alpha(0.65)
+        for median in bp["medians"]:
+            median.set_color("#222222")
 
-    axes[-1].set_xlabel("Week")
-    axes[-1].set_xticks(positions)
-    axes[-1].set_xticklabels(labels)
+    from matplotlib.patches import Patch
+
+    legend_handles = [Patch(facecolor=colors[e], label=e) for e in echelons]
+    ax.legend(handles=legend_handles, title="Echelon", loc="upper left")
+    ax.set_title("Figure 2: Order Quantity Distributions by Week and Echelon")
+    ax.set_xlabel("Week")
+    ax.set_ylabel("Order Quantity")
+    ax.set_xticks(positions)
+    ax.set_xticklabels(labels)
+    ax.grid(True, axis="y")
     fig.tight_layout()
 
     png_path = out_path / "figure2_bullwhip_boxplots.png"
