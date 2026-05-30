@@ -43,7 +43,7 @@ def test_prompt_building() -> None:
 
 
 def test_parsing() -> None:
-    agent = LLMAgent(agent_name="Retailer", max_order=100)
+    agent = LLMAgent(agent_name="Retailer", max_order=10000)
 
     cases = [
         ("15", 15),

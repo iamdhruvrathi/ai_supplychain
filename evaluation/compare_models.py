@@ -114,7 +114,7 @@ def run_llm_simulation(
     model_name: str,
     max_weeks: int = 30,
     ollama_url: str = "http://localhost:11434",
-    max_order: int = 100,
+    max_order: int = 10000,
     order_fn: Optional[Callable[[LLMAgent, Dict], int]] = None,
 ) -> Dict:
     random.seed(seed)

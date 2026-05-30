@@ -11,7 +11,7 @@ import re
 from collections import Counter
 from typing import Any, Dict, Optional
 
-import requests
+from .llm_backends import GroqBackend, OllamaBackend
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +24,13 @@ class LLMAgent:
         agent_name: str,
         model_name: str = "qwen:1.5b",
         ollama_url: str = "http://localhost:11434",
-        max_order: int = 100,
+        max_order: int = 10000,
         temperature: float = 0.2,
         timeout: float = 120.0,
         num_predict: int = 8,
         keep_alive: str = "30m",
+        backend: str = "ollama",
+        backend_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.agent_name = agent_name
         self.model_name = model_name
@@ -38,6 +40,28 @@ class LLMAgent:
         self.timeout = timeout
         self.num_predict = int(num_predict)
         self.keep_alive = keep_alive
+        self.backend_name = backend or "ollama"
+        self.backend_kwargs = backend_kwargs or {}
+
+        # Initialize the chosen backend. Keep Ollama behaviour unchanged by
+        # default; Groq backend implemented in `agents.llm_backends`.
+        if self.backend_name.lower() == "ollama":
+            self.backend = OllamaBackend(
+                model_name=self.model_name,
+                ollama_url=self.ollama_url,
+                timeout=self.timeout,
+                num_predict=self.num_predict,
+                keep_alive=self.keep_alive,
+            )
+        elif self.backend_name.lower() == "groq":
+            self.backend = GroqBackend(
+                model_name=self.model_name,
+                api_key=self.backend_kwargs.get("api_key"),
+                api_url=self.backend_kwargs.get("api_url"),
+                timeout=self.timeout,
+            )
+        else:
+            raise ValueError(f"Unsupported backend: {self.backend_name}")
 
     def _orchestrator_context(self, state: Dict[str, Any]) -> str:
         """Append curated shared information when orchestrator mode is active."""
@@ -84,36 +108,16 @@ class LLMAgent:
         return prompt
 
     def query_model(self, prompt: str) -> Optional[str]:
-        """Query the local Ollama /api/generate endpoint."""
+        """Delegate generation to the configured backend implementation."""
         try:
-            url = f"{self.ollama_url}/api/generate"
-            payload = {
-                "model": self.model_name,
-                "prompt": prompt,
-                "stream": False,
-                "keep_alive": self.keep_alive,
-                "options": {
-                    "temperature": self.temperature,
-                    "num_predict": self.num_predict,
-                },
-            }
-            response = requests.post(
-                url,
-                json=payload,
-                timeout=self.timeout,
+            return self.backend.generate(
+                prompt,
+                temperature=self.temperature,
+                num_predict=self.num_predict,
+                keep_alive=self.keep_alive,
             )
-            response.raise_for_status()
-            data = response.json()
-            return data.get("response", data.get("text", "")).strip()
-        except requests.exceptions.ConnectionError:
-            logger.error(
-                "Failed to connect to Ollama at %s. "
-                "Ensure Ollama is running: ollama serve",
-                self.ollama_url,
-            )
-            return None
-        except requests.exceptions.RequestException as exc:
-            logger.error("Ollama request failed: %s", exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("LLM backend '%s' generation failed: %s", self.backend_name, exc)
             return None
 
     def _clamp_order(self, value: int) -> int:
@@ -195,7 +199,8 @@ class LLMAgent:
         """Build prompt, query Ollama, and return a safe order quantity."""
         prompt = self.build_prompt(state)
         response = self.query_model(prompt)
-        return self.parse_order(response, default=fallback)
+        parsed = self.parse_order(response, default=fallback)
+        return self._clamp_order(parsed)
 
     def generate_order_majority_vote(
         self,

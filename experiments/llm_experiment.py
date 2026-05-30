@@ -55,7 +55,7 @@ def run_llm_experiment(
     max_weeks: int = 30,
     model_name: str = "qwen:1.5b",
     ollama_url: str = "http://localhost:11434",
-    max_order: int = 100,
+    max_order: int = 10000,
     results_file: str = "results/llm_experiment_results.csv",
 ) -> pd.DataFrame:
     """Run a complete LLM-driven Beer Game experiment."""
@@ -64,6 +64,9 @@ def run_llm_experiment(
 
     env = BeerGame(max_weeks=max_weeks, verbose=False)
     env.reset()
+
+    print(f"Backend : Ollama")
+    print(f"Model   : {model_name}")
 
     agents = {
         name: LLMAgent(
@@ -200,8 +203,13 @@ if __name__ == "__main__":
         type=str,
         default="results/llm_experiment_results.csv",
     )
+    parser.add_argument(
+        "--backend",
+        choices=("ollama", "groq"),
+        default="ollama",
+        help="Inference backend to use (ollama or groq)",
+    )
     args = parser.parse_args()
-
     try:
         run_llm_experiment(
             max_weeks=args.weeks,

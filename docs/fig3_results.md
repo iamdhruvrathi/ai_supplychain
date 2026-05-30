@@ -21,7 +21,7 @@ The original paper evaluates whether increasing the number of independent LLM sa
 
 ## Original Paper Figure
 
-![Paper Figure 3](paper_fig3.png)
+![Paper Figure 3](fig3_paper.png)
 
 _Figure 3 from the original paper showing the effect of majority voting with 10 and 100 samples._
 
@@ -29,7 +29,7 @@ _Figure 3 from the original paper showing the effect of majority voting with 10 
 
 ## Our Replication
 
-![Our Figure 3](my_fig3.png)
+![Our Figure 3](fig3_qwen25.png)
 
 _Figure 3 replication using qwen2.5:1.5b._
 

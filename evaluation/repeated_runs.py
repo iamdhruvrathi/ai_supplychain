@@ -131,6 +131,7 @@ def run_repeated_experiment(
     policy_fn: Optional[Callable] = None,
     model_name: Optional[str] = None,
     ollama_url: str = "http://localhost:11434",
+    backend: str = "ollama",
     save_dir: str = "results/repeated_runs",
     export_trajectories: bool = True,
     timeout: float = 120.0,
@@ -153,6 +154,8 @@ def run_repeated_experiment(
     policy_type = "heuristic"
     if model_name:
         policy_type = "llm"
+        print(f"Backend : {backend.capitalize()}")
+        print(f"Model   : {model_name}")
         llm_agents = {
             name: LLMAgent(
                 agent_name=name,
@@ -162,6 +165,7 @@ def run_repeated_experiment(
                 temperature=temperature,
                 timeout=timeout,
                 num_predict=num_predict,
+                backend=backend,
             )
             for name in ECHELONS
         }
@@ -302,6 +306,12 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default="results/repeated_runs")
     parser.add_argument("--demand-pattern", choices=("mit", "seeded", "random"), default="mit")
     parser.add_argument("--n-samples", type=int, default=1)
+    parser.add_argument(
+        "--backend",
+        choices=("ollama", "groq"),
+        default="ollama",
+        help="Inference backend to use: ollama (local) or groq (remote)",
+    )
     args = parser.parse_args()
 
     if args.config:
@@ -330,6 +340,7 @@ if __name__ == "__main__":
         config=config,
         n_runs=n_runs,
         model_name=model,
+        backend=args.backend,
         save_dir=args.output_dir,
         timeout=args.timeout,
         temperature=args.temperature,
