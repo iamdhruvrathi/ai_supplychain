@@ -13,7 +13,11 @@ from typing import Any, Dict, Optional
 
 from tools.inventory_tool import eoq_recommendation
 
-from .llm_backends import GroqBackend, OllamaBackend
+from agents.llm_backends import (
+    OllamaBackend,
+    GroqBackend,
+    VLLMBackend,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +67,15 @@ class LLMAgent:
                 model_name=self.model_name,
                 api_key=self.backend_kwargs.get("api_key"),
                 api_url=self.backend_kwargs.get("api_url"),
+                timeout=self.timeout,
+            )
+        elif self.backend_name.lower() == "vllm":
+            self.backend = VLLMBackend(
+                model_name=self.model_name,
+                base_url=self.backend_kwargs.get(
+                    "base_url",
+                    "http://localhost:8000/v1",
+                ),
                 timeout=self.timeout,
             )
         else:

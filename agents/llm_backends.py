@@ -11,6 +11,7 @@ import os
 import time
 from typing import Any, Dict, Optional
 import re
+from openai import OpenAI
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -221,3 +222,46 @@ class GroqBackend(BaseLLMBackend):
         text = re.sub(r"\s+", " ", text).strip()
 
         return text
+
+class VLLMBackend(BaseLLMBackend):
+    def __init__(
+        self,
+        model_name: str,
+        base_url: str = "http://localhost:8000/v1",
+        timeout: float = 120.0,
+        **kwargs,
+    ):
+        self.model_name = model_name
+        self.timeout = timeout
+
+        self.client = OpenAI(
+            api_key="EMPTY",
+            base_url=base_url,
+        )
+
+    def generate(self, prompt: str, **options):
+        temperature = float(options.get("temperature", 0.2))
+        max_tokens = int(options.get("num_predict", 8))
+
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Return only the final order quantity.",
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            return resp.choices[0].message.content.strip()
+
+        except Exception as exc:
+            logger.error("vLLM call failed: %s", exc)
+            return None

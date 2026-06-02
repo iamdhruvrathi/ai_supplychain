@@ -383,7 +383,7 @@ if __name__ == "__main__":
     parser.add_argument("--use-tool-recommendation", action="store_true")
     parser.add_argument(
         "--backend",
-        choices=("ollama", "groq"),
+        choices=("ollama", "groq", "vllm"),
         default="ollama",
         help="Inference backend to use: ollama (local) or groq (remote)",
     )

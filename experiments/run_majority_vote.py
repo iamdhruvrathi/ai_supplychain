@@ -36,7 +36,7 @@ def main(argv=None) -> int:
     parser.add_argument("--num-predict", type=int, default=8)
     parser.add_argument(
         "--backend",
-        choices=("ollama", "groq"),
+        choices=("ollama", "groq", "vllm"),
         default="ollama",
         help="Inference backend to use (ollama or groq)",
     )

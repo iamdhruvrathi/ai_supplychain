@@ -216,7 +216,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--backend",
-        choices=("ollama", "groq"),
+        choices=("ollama", "groq", "vllm"),
         default="ollama",
         help="Inference backend to use (ollama or groq)",
     )
