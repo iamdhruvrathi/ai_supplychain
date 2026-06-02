@@ -12,6 +12,9 @@ import time
 from typing import Any, Dict, Optional
 import re
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -88,7 +91,7 @@ class GroqBackend(BaseLLMBackend):
     **kwargs,
     ) -> None:
         self.model_name = model_name
-        self.api_key = api_key or os.environ.get("GROQ_API_KEY")
+        self.api_key = api_key or os.environ.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
         self.timeout = float(timeout)
 
         if Groq is None:

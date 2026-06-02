@@ -29,6 +29,7 @@ def load_yaml(path: str) -> Dict[str, Any]:
 def config_from_dict(data: Dict[str, Any]) -> SimulationConfig:
     exp = data.get("experiment", {})
     orch = data.get("orchestrator", {})
+    tools = data.get("tools", {})
     cons = data.get("constraints", {})
     rew = data.get("reward", {})
 
@@ -62,6 +63,8 @@ def config_from_dict(data: Dict[str, Any]) -> SimulationConfig:
         fixed_demand_path=fixed_demand_path,
         verbose=bool(exp.get("verbose", False)),
         orchestrator_mode=mode,
+        demand_history_window=int(orch.get("demand_history_window", 5)),
+        use_tool_recommendation=bool(tools.get("use_tool_recommendation", False)),
         constraints=constraints,
         reward=RewardConfig(
             alpha=float(rew.get("alpha", 1.0)),

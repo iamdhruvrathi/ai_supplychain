@@ -45,8 +45,13 @@ class TrajectoryWriter:
                 "done": step.get("done"),
                 "policy_type": step.get("policy_type"),
                 "model_name": step.get("model_name"),
+                "tool_order": step.get("tool_order"),
+                "llm_order": step.get("llm_order"),
+                "difference": step.get("difference"),
+                "consensus_gap": step.get("consensus_gap"),
                 "state_json": json.dumps(step.get("state", {})),
                 "next_state_json": json.dumps(step.get("next_state", {})),
+                "info_json": json.dumps(step.get("info", {})),
             })
 
         with open(path, "w", newline="", encoding="utf-8") as f:

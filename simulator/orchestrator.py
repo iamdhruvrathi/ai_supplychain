@@ -51,7 +51,7 @@ class Orchestrator:
                 augmented["shared_demand_volatility"] = 0.0
             return augmented
 
-        if self.mode == OrchestratorMode.CENTRALIZED:
+        if self.mode in {OrchestratorMode.CENTRALIZED, OrchestratorMode.NEGOTIATION}:
             augmented["shared_current_demand"] = current_demand
             augmented["shared_demand_history"] = demand_history[
                 -self.demand_history_window :

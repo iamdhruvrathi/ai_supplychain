@@ -89,6 +89,11 @@ class BeerGame:
             "total_cost": [],
             "bullwhip": [],
             "reward": [],
+            "tool_order": {node.name: [] for node in self.nodes},
+            "llm_order": {node.name: [] for node in self.nodes},
+            "difference": {node.name: [] for node in self.nodes},
+            "negotiation_proposals": [],
+            "consensus_gap": [],
         }
 
         self.trajectories = []
@@ -137,6 +142,7 @@ class BeerGame:
             "last_customer_demand": int(downstream_demand),
             "last_order": int(node_state.last_order),
             "current_week": int(self.week),
+            "lead_time": int(self.config.lead_time),
         }
 
     def _get_downstream_demand(self, agent_name: str) -> int:
@@ -227,9 +233,19 @@ class BeerGame:
                 else 0.0
             ),
             "trajectory_count": len(self.trajectories),
+            "mean_consensus_gap": (
+                statistics.mean(history["consensus_gap"])
+                if history.get("consensus_gap")
+                else 0.0
+            ),
+            "max_consensus_gap": (
+                max(history["consensus_gap"])
+                if history.get("consensus_gap")
+                else 0
+            ),
         }
 
-    def step(self, actions):
+    def step(self, actions, action_metadata=None):
         """
         RL Environment Step
 
@@ -373,7 +389,8 @@ class BeerGame:
 
             total_system_cost += step_cost
 
-        self._record_history(customer_demand, total_system_cost)
+        action_metadata = action_metadata or {}
+        self._record_history(customer_demand, total_system_cost, action_metadata)
         bullwhip_metrics = self.compute_bullwhip()
         total_backlog = sum(node.backlog for node in self.nodes)
         bullwhip_overall = (
@@ -393,11 +410,17 @@ class BeerGame:
         }
 
         for node in self.nodes:
+            metadata = action_metadata.get(node.name, {})
             self.trajectories.append({
                 "week": current_week,
                 "agent": node.name,
                 "state": dict(pre_states[node.name]),
                 "action": int(actions.get(node.name, 0)),
+                "tool_order": metadata.get("tool_order"),
+                "llm_order": metadata.get("llm_order"),
+                "difference": metadata.get("difference"),
+                "negotiation_proposals": metadata.get("negotiation_proposals"),
+                "consensus_gap": self.history["consensus_gap"][-1],
                 "reward": float(reward),
                 "next_state": dict(post_states[node.name]),
                 "cost": float(total_system_cost),
@@ -428,6 +451,7 @@ class BeerGame:
             "bullwhip": bullwhip_metrics,
             "reward": reward,
             "reward_components": reward_components,
+            "consensus_gap": self.history["consensus_gap"][-1],
         }
 
         next_state = self.get_state()
@@ -450,10 +474,15 @@ class BeerGame:
             info
         )
 
-    def _record_history(self, demand, total_system_cost):
+    def _record_history(self, demand, total_system_cost, action_metadata=None):
+        action_metadata = action_metadata or {}
         self.history["demand"].append(demand)
 
+        order_vector = [int(node.last_order) for node in self.nodes]
+        consensus_gap = max(order_vector) - min(order_vector) if order_vector else 0
+
         for node in self.nodes:
+            metadata = action_metadata.get(node.name, {})
             self.history["orders"][node.name].append(
                 node.last_order
             )
@@ -463,6 +492,15 @@ class BeerGame:
             self.history["backlog"][node.name].append(
                 node.backlog
             )
+            self.history["tool_order"][node.name].append(
+                metadata.get("tool_order")
+            )
+            self.history["llm_order"][node.name].append(
+                metadata.get("llm_order")
+            )
+            self.history["difference"][node.name].append(
+                metadata.get("difference")
+            )
 
         self.history["step_cost"].append(total_system_cost)
         self.history["total_cost"].append(
@@ -471,6 +509,15 @@ class BeerGame:
         self.history["bullwhip"].append(
             self.compute_bullwhip()
         )
+        self.history["negotiation_proposals"].append(
+            {
+                node.name: action_metadata.get(node.name, {}).get(
+                    "negotiation_proposals"
+                )
+                for node in self.nodes
+            }
+        )
+        self.history["consensus_gap"].append(consensus_gap)
 
     def get_trajectories(self):
         """Return rollout trajectories for RL training and analysis."""

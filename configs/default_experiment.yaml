@@ -8,7 +8,10 @@ experiment:
   initial_inventory: 20
 
 orchestrator:
-  mode: decentralized  # decentralized | demand_sharing | history_sharing | centralized
+  mode: decentralized  # decentralized | demand_sharing | history_sharing | centralized | negotiation
+
+tools:
+  use_tool_recommendation: false
 
 agents:
   retailer: qwen2.5:1.5b

@@ -36,6 +36,40 @@ logger = logging.getLogger(__name__)
 ECHELONS = ("Retailer", "Wholesaler", "Distributor", "Factory")
 
 
+def _summarize_consensus(histories: List[Dict[str, Any]]) -> Dict[str, float]:
+    gaps = [
+        gap
+        for history in histories
+        for gap in history.get("consensus_gap", [])
+        if gap is not None
+    ]
+    if not gaps:
+        return {"mean_consensus_gap": 0.0, "max_consensus_gap": 0.0}
+    return {
+        "mean_consensus_gap": float(sum(gaps) / len(gaps)),
+        "max_consensus_gap": float(max(gaps)),
+    }
+
+
+def _llm_order(
+    agent: LLMAgent,
+    state: Dict[str, Any],
+    fallback_order: int,
+    n_samples: int,
+) -> int:
+    if n_samples > 1:
+        return agent.generate_order_majority_vote(
+            state,
+            n_samples=n_samples,
+            fallback=fallback_order,
+        )
+    return agent.generate_order(state, fallback=fallback_order)
+
+
+def _metadata_from_agent(agent: LLMAgent) -> Dict[str, Any]:
+    return dict(getattr(agent, "last_decision_metadata", {}) or {})
+
+
 def _build_env(config: SimulationConfig) -> BeerGame:
     return BeerGame(
         max_weeks=config.max_weeks,
@@ -74,34 +108,63 @@ def run_single_episode(
     while not done:
         states = _apply_orchestrator_states(env)
         actions = {}
-        for name in ECHELONS:
-            if llm_agents and name in llm_agents:
+        action_metadata = {}
+
+        if config.orchestrator_mode == OrchestratorMode.NEGOTIATION and llm_agents:
+            proposals = {}
+            for name in ECHELONS:
                 fallback_order = policy_fn(env, name, states[name])
-                if n_samples > 1:
-                    raw = llm_agents[name].generate_order_majority_vote(
+                proposals[name] = _llm_order(
+                    llm_agents[name],
+                    states[name],
+                    fallback_order,
+                    n_samples,
+                )
+
+            for name in ECHELONS:
+                negotiation_state = dict(states[name])
+                negotiation_state["negotiation_round"] = 2
+                negotiation_state["negotiation_proposals"] = dict(proposals)
+                raw = _llm_order(
+                    llm_agents[name],
+                    negotiation_state,
+                    proposals[name],
+                    n_samples,
+                )
+                metadata = _metadata_from_agent(llm_agents[name])
+                metadata["negotiation_proposals"] = dict(proposals)
+                action_metadata[name] = metadata
+
+                last = states[name].get("last_order", 0)
+                actions[name] = apply_constraints(
+                    raw,
+                    states[name],
+                    config.constraints,
+                    last_order=last,
+                )
+        else:
+            for name in ECHELONS:
+                if llm_agents and name in llm_agents:
+                    fallback_order = policy_fn(env, name, states[name])
+                    raw = _llm_order(
+                        llm_agents[name],
                         states[name],
-                        n_samples=n_samples,
-                        fallback=fallback_order,
+                        fallback_order,
+                        n_samples,
                     )
+                    action_metadata[name] = _metadata_from_agent(llm_agents[name])
                 else:
-                    raw = llm_agents[name].generate_order(
-                        states[name],
-                        fallback=fallback_order,
-                    )
-                policy_type = "llm"
-            else:
-                raw = policy_fn(env, name, states[name])
-                policy_type = "heuristic"
+                    raw = policy_fn(env, name, states[name])
 
-            last = states[name].get("last_order", 0)
-            actions[name] = apply_constraints(
-                raw,
-                states[name],
-                config.constraints,
-                last_order=last,
-            )
+                last = states[name].get("last_order", 0)
+                actions[name] = apply_constraints(
+                    raw,
+                    states[name],
+                    config.constraints,
+                    last_order=last,
+                )
 
-        _, _, done, info = env.step(actions)
+        _, _, done, info = env.step(actions, action_metadata=action_metadata)
         if progress == "week":
             action_text = ", ".join(f"{name}={qty}" for name, qty in actions.items())
             print(
@@ -166,6 +229,7 @@ def run_repeated_experiment(
                 timeout=timeout,
                 num_predict=num_predict,
                 backend=backend,
+                use_tool_recommendation=config.use_tool_recommendation,
             )
             for name in ECHELONS
         }
@@ -196,6 +260,7 @@ def run_repeated_experiment(
             backlogs_by_echelon=bl_by_echelon,
         )
 
+        consensus = _summarize_consensus(histories)
         report = {
             "n_runs": len(episodes),
             "requested_runs": n_runs,
@@ -205,12 +270,16 @@ def run_repeated_experiment(
                 "demand_seed": config.demand_seed,
                 "fixed_demand_path": demand_path,
                 "orchestrator_mode": config.orchestrator_mode.value,
+                "use_tool_recommendation": config.use_tool_recommendation,
                 "constraints_enabled": config.constraints.enabled,
                 "model_name": model_name,
             },
             "cost": costs,
             "reliability": reliability_full,
             "agent_bullwhip": agent_bw,
+            "consensus": consensus,
+            "mean_consensus_gap": consensus["mean_consensus_gap"],
+            "max_consensus_gap": consensus["max_consensus_gap"],
             "total_costs": total_costs,
         }
 
@@ -307,6 +376,12 @@ if __name__ == "__main__":
     parser.add_argument("--demand-pattern", choices=("mit", "seeded", "random"), default="mit")
     parser.add_argument("--n-samples", type=int, default=1)
     parser.add_argument(
+        "--orchestrator-mode",
+        choices=tuple(mode.value for mode in OrchestratorMode),
+        default=None,
+    )
+    parser.add_argument("--use-tool-recommendation", action="store_true")
+    parser.add_argument(
         "--backend",
         choices=("ollama", "groq"),
         default="ollama",
@@ -317,6 +392,10 @@ if __name__ == "__main__":
     if args.config:
         from configs.loader import load_experiment_config
         config = load_experiment_config(args.config)
+        if args.orchestrator_mode:
+            config.orchestrator_mode = OrchestratorMode(args.orchestrator_mode)
+        if args.use_tool_recommendation:
+            config.use_tool_recommendation = True
         n_runs = args.runs
         model = args.model
     else:
@@ -332,6 +411,12 @@ if __name__ == "__main__":
             max_weeks=args.weeks,
             demand_seed=demand_seed,
             fixed_demand_path=fixed_demand_path,
+            orchestrator_mode=(
+                OrchestratorMode(args.orchestrator_mode)
+                if args.orchestrator_mode
+                else OrchestratorMode.DECENTRALIZED
+            ),
+            use_tool_recommendation=args.use_tool_recommendation,
         )
         n_runs = args.runs
         model = None if args.offline else args.model

@@ -14,6 +14,7 @@ class OrchestratorMode(str, Enum):
     DEMAND_SHARING = "demand_sharing"
     HISTORY_SHARING = "history_sharing"
     CENTRALIZED = "centralized"
+    NEGOTIATION = "negotiation"
 
 
 @dataclass
@@ -52,6 +53,7 @@ class SimulationConfig:
     verbose: bool = False
     orchestrator_mode: OrchestratorMode = OrchestratorMode.DECENTRALIZED
     demand_history_window: int = 5
+    use_tool_recommendation: bool = False
     constraints: ConstraintConfig = field(default_factory=ConstraintConfig)
     reward: RewardConfig = field(default_factory=RewardConfig)
 

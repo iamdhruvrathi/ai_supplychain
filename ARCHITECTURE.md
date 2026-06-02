@@ -1,6 +1,6 @@
-# Architecture
+﻿# Architecture
 
-Technical reference for the AI Supply Chain Beer Game framework. All descriptions match the **current codebase**—no planned components are documented as implemented.
+This repository implements a local Beer Game replication framework with decentralized LLM agents, classical baselines, and repeated-run reliability experiments.
 
 ---
 
@@ -17,8 +17,8 @@ Technical reference for the AI Supply Chain Beer Game framework. All description
 9. [API Reference](#9-api-reference)
 10. [Folder Structure](#10-folder-structure)
 11. [Data Flow](#11-data-flow)
-12. [Ollama Interaction](#12-ollama-interaction)
-13. [Future RL / PPO / GRPO](#13-future-rl--ppo--grpo)
+12. [Ollama / Backend Interaction](#12-ollama--backend-interaction)
+13. [Future / Not Implemented](#13-future--not-implemented)
 
 ---
 
@@ -26,45 +26,17 @@ Technical reference for the AI Supply Chain Beer Game framework. All description
 
 The framework has four cooperating layers:
 
-```mermaid
-flowchart TB
-    subgraph policies [Policy Layer]
-        LLM[LLMAgent x4]
-        Classical[base_stock / moving_avg / random]
-    end
-
-    subgraph sim [Simulator]
-        BG[BeerGame]
-        Node[SupplyChainNode x4]
-        BG --> Node
-    end
-
-    subgraph metrics [Metrics]
-        BW[bullwhip]
-        ST[stability]
-    end
-
-    subgraph output [Outputs]
-        CSV[results/*.csv]
-        PLT[plots/*.png]
-        TRAJ[trajectories]
-    end
-
-    LLM -->|actions| BG
-    Classical -->|actions| BG
-    BG --> BW
-    BG --> ST
-    BG --> TRAJ
-    BG --> CSV
-    BG --> PLT
-```
+- `simulator/` — Beer Game environment and state transition logic.
+- `agents/` — local LLM agent wrappers and backend adapters.
+- `policies/` — classical policy implementations for baseline comparisons.
+- `evaluation/` — repeated-run experiments, metric computation, and plotting.
 
 **Design principles:**
 
-- **Modularity** — simulator, agents, policies, and metrics are separate packages.
-- **Decentralization** — each echelon observes only local state; no inter-agent messaging.
-- **RL compatibility** — `reset()` / `step(actions)` API, structured observations, trajectory store.
-- **Reproducibility** — seeded experiments, CSV exports, optional plotting.
+- **Modularity** — separate simulator, agents, metrics, and experiments.
+- **Decentralization** — agents act on local information unless the orchestrator shares data.
+- **Reproducibility** — fixed-demand paths, demand seeds, and explicit output directories.
+- **Research focus** — repeated-run variability and bullwhip amplification rather than production RL training.
 
 ---
 
@@ -78,53 +50,29 @@ Customer ──demand──► Retailer ──order──► Wholesaler ──or
                          └── shipments ───┴── shipments ───────┴── shipments ─────┘
 ```
 
-Each echelon is a `SupplyChainNode` with:
+Each echelon is a `SupplyChainNode`.
 
 | Parameter           | Default | Role                                                |
 | ------------------- | ------- | --------------------------------------------------- |
 | `initial_inventory` | 20      | Starting on-hand stock                              |
-| `lead_time`         | 2       | FIFO pipeline length (weeks until shipment arrives) |
-| `holding_cost`      | 1.0     | Cost per unit in inventory per week                 |
+| `lead_time`         | 2       | FIFO pipeline depth for incoming shipments         |
+| `holding_cost`      | 1.0     | Cost per unit held in inventory per week            |
 | `backlog_cost`      | 2.0     | Cost per unit of unmet demand per week              |
 
 ### Weekly `step()` sequence
 
 `BeerGame.step(actions)` executes in this fixed order:
 
-```
-1. Receive shipments     → pop left of incoming_shipments deque → add to inventory
-2. Generate demand       → random integer in [2, 8] at retailer only
-3. Fulfill demand        → cascade: retailer←customer, wholesaler←retailer order, etc.
-4. Ship downstream       → push shipped qty into downstream pipeline
-5. Factory production    → factory order becomes production entering factory pipeline
-6. Place orders          → actions dict applied via node.place_order()
-7. Compute costs         → holding + backlog per node; sum to total_system_cost
-8. Record history        → demand, orders, inventory, backlog, costs, bullwhip
-9. Shape reward          → cost + bullwhip + backlog penalty
-10. Log trajectories     → per-agent (s, a, r, s')
-11. Increment week       → done when week >= max_weeks
-```
-
-```mermaid
-sequenceDiagram
-    participant A as Agent policies
-    participant E as BeerGame
-    participant N as SupplyChainNodes
-
-    A->>E: actions {Retailer: q1, ...}
-    E->>N: receive_shipment()
-    E->>E: generate_customer_demand()
-    E->>N: fulfill_demand() cascade
-    E->>N: add_incoming_shipment()
-    E->>N: place_order(actions)
-    E->>N: compute_costs()
-    E->>E: record history, reward, trajectories
-    E-->>A: next_state, reward, done, info
-```
-
-### Customer demand
-
-`generate_customer_demand()` returns `random.randint(2, 8)` each week. There is no external demand dataset in the current implementation.
+1. Receive shipments from the pipeline into inventory.
+2. Generate customer demand from the configured demand generator.
+3. Fulfill demand by shipping available inventory and updating backlog.
+4. Advance shipments downstream via per-node pipelines.
+5. Load the factory pipeline with the factory's last order.
+6. Apply each node's action via `place_order()`.
+7. Compute per-node holding and backlog costs.
+8. Record history, bullwhip, and trajectories.
+9. Compute shaped reward via configured weights.
+10. Return next state, reward, done, and info.
 
 ---
 
@@ -132,48 +80,46 @@ sequenceDiagram
 
 ### `SupplyChainNode` (`simulator/node.py`)
 
-Dataclass encapsulating one echelon.
+Encapsulates one supply-chain echelon.
 
 | Method                     | Purpose                                                  |
 | -------------------------- | -------------------------------------------------------- |
-| `reset()`                  | Restore inventory, empty backlog, zero pipeline          |
-| `receive_shipment()`       | FIFO pop → inventory                                     |
-| `add_incoming_shipment(q)` | FIFO push (arrives after `lead_time` weeks)              |
-| `fulfill_demand(d)`        | Ship min(inventory, demand+backlog); remainder → backlog |
-| `place_order(q)`           | Set `last_order`, append to `order_history`              |
-| `compute_costs()`          | `inventory * holding_cost + backlog * backlog_cost`      |
-| `get_state()`              | Raw dict: inventory, backlog, pipeline list, last_order  |
+| `reset()`                  | Reset inventory, backlog, pipeline, and history           |
+| `receive_shipment()`       | Pop FIFO pipeline shipment and add to inventory          |
+| `add_incoming_shipment()`  | Append shipment to pipeline for future arrival           |
+| `fulfill_demand(d)`        | Serve demand/backlog and compute new backlog             |
+| `place_order(q)`           | Record the new order and save last order                 |
+| `compute_costs()`          | Calculate holding + backlog costs                        |
+| `get_state()`              | Raw state dict for debugging and visualization           |
 
 ### `BeerGame` (`simulator/beer_game.py`)
 
-Environment orchestrator.
+Controls simulation progression.
 
-**Constructor:**
+Key methods:
 
-```python
-BeerGame(
-    max_weeks=50,
-    verbose=False,
-    alpha=1.0,   # cost weight
-    beta=0.1,    # bullwhip weight
-    gamma=0.5,   # backlog weight
-)
-```
+- `reset()` — clears state, history, and trajectories.
+- `step(actions)` — advances one week.
+- `get_state(agent_name=None)` — raw agent/full state.
+- `get_state_dict(agent_name)` — observation dictionary for a single agent.
+- `get_all_states()` — all local observations.
+- `get_agent_state(agent_name)` — augmented state with orchestrator sharing.
+- `get_global_state()` — centralized snapshot.
+- `get_history()` — time-series of system state.
+- `get_trajectories()` — standardized rollout records.
+- `compute_bullwhip()` — order-to-demand amplification ratios.
 
-**Core methods:**
+### Shared state and orchestrator modes
 
-| Method                       | Returns                            | Description                                  |
-| ---------------------------- | ---------------------------------- | -------------------------------------------- |
-| `reset()`                    | state                              | New episode; clears history and trajectories |
-| `step(actions)`              | `(next_state, reward, done, info)` | Advance one week                             |
-| `get_state(agent_name=None)` | dict                               | Per-agent RL dict or all raw node states     |
-| `get_state_dict(agent_name)` | dict                               | RL observation for one echelon               |
-| `get_all_states()`           | dict                               | All echelons' RL observations                |
-| `get_history()`              | dict                               | Time series for analysis                     |
-| `get_trajectories()`         | list                               | Rollout transitions                          |
-| `compute_bullwhip()`         | dict                               | Per-agent and overall ratios                 |
+The orchestrator supports shared information regimes.
 
-**Plotting** (requires matplotlib): `plot_orders_vs_demand`, `plot_inventory`, `plot_backlog`, `plot_inventory_and_backlog`.
+- `DECENTRALIZED` — no shared observability.
+- `DEMAND_SHARING` — share current customer demand.
+- `HISTORY_SHARING` — share demand history and volatility.
+- `CENTRALIZED` — share system-level backlog/inventory and per-echelon snapshots.
+- `NEGOTIATION` — multi-stage decision proposals and revision context in `evaluation/repeated_runs.py`.
+
+`BeerGame.get_agent_state()` returns the augmented local observation when orchestrator sharing is enabled.
 
 ---
 
@@ -181,204 +127,125 @@ BeerGame(
 
 ### `LLMAgent` (`agents/llm_agent.py`)
 
-One instance per echelon; **no shared context** between agents.
+Each echelon uses a dedicated `LLMAgent` instance.
 
-```mermaid
-flowchart LR
-    S[state dict] --> P[build_prompt]
-    P --> O[query_model POST /api/generate]
-    O --> R[raw text]
-    R --> X[parse_order]
-    X --> A[clamped integer 0..max_order]
-```
+Pipeline:
 
-| Method                            | Description                                          |
-| --------------------------------- | ---------------------------------------------------- |
-| `build_prompt(state)`             | Natural-language prompt from local observation       |
-| `query_model(prompt)`             | HTTP POST to Ollama; returns response text or `None` |
-| `parse_order(text, default)`      | Regex extraction; reasoning-model safe               |
-| `generate_order(state, fallback)` | Full pipeline: prompt → query → parse                |
+1. Build structured prompt from the agent state.
+2. Query the selected backend (`ollama` or `groq`).
+3. Parse the returned text for an integer order.
+4. Clamp the order to a valid range.
+5. Return a safe integer action.
 
-**Configuration:**
+The agent also supports:
 
-| Parameter     | Default                  |
-| ------------- | ------------------------ |
-| `model_name`  | `qwen:1.5b`              |
-| `ollama_url`  | `http://localhost:11434` |
-| `max_order`   | 100                      |
-| `temperature` | 0.2                      |
-| `timeout`     | 120.0 seconds            |
+- tool recommendation input via `tools/inventory_tool.py`
+- negotiation context when orchestrator `NEGOTIATION` mode is active
+- majority-vote sampling via `generate_order_majority_vote()`
 
-**Parsing strategy** (for reasoning models):
+### Backend support
 
-1. Match explicit patterns (`order: 42`, `Answer: 18`, etc.)
-2. Else use **last standalone positive integer** in the response
-3. Reject negatives near the matched digit
-4. Clamp to `[0, max_order]`; return `default` on failure
+- `OllamaBackend` — default.
+- `GroqBackend` — supported by `agents.llm_backends`.
+
+### Output parsing
+
+The parser prefers explicit integer patterns such as:
+
+- `order: 42`
+- `Answer: 18`
+- fenced code blocks containing a number
+
+It falls back to the last standalone positive integer and clamps any value to `[0, max_order]`.
 
 ---
 
 ## 5. Trajectory Logging
 
-After each `step()`, the simulator appends **one record per echelon** to `env.trajectories`:
+Each step adds one trajectory record per echelon.
 
-```python
-{
-    "week": int,           # week index before increment
-    "agent": str,          # "Retailer" | "Wholesaler" | ...
-    "state": dict,         # pre-step get_state_dict()
-    "action": int,         # order placed
-    "reward": float,       # shared shaped reward (system-level)
-    "next_state": dict,    # post-step get_state_dict()
-    "cost": float,         # total_system_cost this week
-    "bullwhip": float|None # overall bullwhip at this step
-}
-```
+A trajectory record includes:
 
-Access via `env.get_trajectories()` (returns a shallow copy).
+- `week`
+- `agent`
+- `state`
+- `action`
+- `reward`
+- `next_state`
+- `cost`
+- `bullwhip`
 
-**RL note:** Reward is currently **shared** across agents (full supply chain penalty). Per-agent reward decomposition is not implemented.
-
-Episode length: `4 agents × max_weeks` transitions.
+Use `env.get_trajectories()` to retrieve rollout records.
 
 ---
 
 ## 6. Reward Shaping
 
-### Formula
-
-\[
-R_t = -\big(\alpha \cdot C_t + \beta \cdot B_t + \gamma \cdot L_t\big)
-\]
-
-| Symbol  | Source                | Meaning                                                      |
-| ------- | --------------------- | ------------------------------------------------------------ |
-| \(C_t\) | `total_system_cost`   | Sum of holding + backlog costs all nodes                     |
-| \(B_t\) | `bullwhip["overall"]` | Mean order-variance / demand-variance ratio (0 if undefined) |
-| \(L_t\) | `sum(node.backlog)`   | Total system backlog                                         |
-
-Defaults: `alpha=1.0`, `beta=0.1`, `gamma=0.5`.
-
-### `info` dict (per step)
+The shaped reward is computed from system cost, bullwhip, and backlog.
 
 ```python
-info = {
-    "week": int,
-    "customer_demand": int,
-    "total_system_cost": float,
-    "total_backlog": int,
-    "bullwhip": dict | None,
-    "reward": float,
-    "reward_components": {
-        "cost": float,
-        "bullwhip": float,
-        "backlog": float,
-    },
-}
+R_t = - (alpha * total_cost + beta * bullwhip_overall + gamma * total_backlog)
 ```
 
-`history["reward"]` stores the reward series for plotting and comparison exports.
+Default weights are:
+
+- `alpha = 1.0`
+- `beta = 0.1`
+- `gamma = 0.5`
+
+`BeerGame.step()` returns an `info` dictionary containing reward, costs, and bullwhip data.
 
 ---
 
 ## 7. Metrics
 
-> Full equations: [docs/METRICS.md](docs/METRICS.md)  
-> Replication checklist: [docs/REPLICATION_PLAN.md](docs/REPLICATION_PLAN.md)
+### Bullwhip
 
-### Agent bullwhip (`metrics/agent_bullwhip.py`) — paper Definition 1
+`metrics/bullwhip.py` computes order amplification as:
 
-Run-to-run variance \(\sigma^2\_{k,t}\), cross-echelon \(\Psi_k(t)\), intertemporal \(\Phi_k(t)\).  
-Computed from `evaluation/repeated_runs.py` over R episodes with fixed `demand_seed`.
+```python
+BW_k = Var(orders_k) / Var(customer_demand)
+```
 
-### Reliability (`metrics/reliability.py`)
+### Agent bullwhip
 
-Coefficient of variation, tail events, order spikes, inventory collapse, backlog explosions.
+`metrics/agent_bullwhip.py` computes across-run agent bullwhip metrics, including per-echelon summaries.
 
-### Cost analysis (`metrics/cost_analysis.py`)
+### Reliability and cost
 
-Mean, std, confidence intervals across repeated runs.
-
-### Bullwhip (`metrics/bullwhip.py` and `BeerGame.compute_bullwhip`)
-
-Per-agent ratio:
-
-\[
-BW_k = \frac{\mathrm{Var}(\text{orders}\_k)}{\mathrm{Var}(\text{customer demand})}
-\]
-
-- Uses population variance (`statistics.pvariance`).
-- Requires ≥ 2 demand samples and non-zero demand variance.
-- `overall` = mean of valid per-agent ratios.
-
-Also available as standalone functions: `bullwhip_ratio()`, `bullwhip_per_agent(history)`.
-
-### Stability (`metrics/stability.py`)
-
-| Function                          | Output                                      |
-| --------------------------------- | ------------------------------------------- |
-| `order_variance(history)`         | Per-agent order variance                    |
-| `inventory_variance(history)`     | Per-agent inventory variance                |
-| `backlog_variance(history)`       | Per-agent backlog variance                  |
-| `cumulative_instability(history)` | Mean across agents of weighted variance sum |
-| `stability_summary(history)`      | All of the above in one dict                |
-
-Used by `evaluation/compare_models.py` for benchmarking.
+- `metrics/reliability.py`
+- `metrics/cost_analysis.py`
+- `metrics/stability.py`
 
 ---
 
 ## 8. Experiment Pipeline
 
-### Entry points
+### Supported scripts
 
-| Script                               | Role                                                |
-| ------------------------------------ | --------------------------------------------------- |
-| `main.py`                            | CLI wrapper for tests, demo, baseline, llm, compare |
-| `experiments/llm_experiment.py`      | Single-model LLM run + plots                        |
-| `experiments/baseline_experiment.py` | random / base_stock / moving_avg × N seeds          |
-| `evaluation/compare_models.py`       | qwen2.5 vs deepseek-r1 vs base_stock × N repeats    |
-| `experiments/test_llm_agent.py`      | Unit tests                                          |
-| `experiments/test_state_api.py`      | State API smoke test                                |
-| `experiments/smoke_test.py`          | Minimal integration                                 |
+| Script                               | Purpose                                                |
+| ------------------------------------ | ------------------------------------------------------ |
+| `main.py`                            | CLI wrapper for experiments and validation             |
+| `experiments/llm_experiment.py`      | Single-run LLM experiment and plot generation          |
+| `experiments/baseline_experiment.py` | Classical baseline policy experiment                   |
+| `experiments/run_majority_vote.py`   | Majority-vote repeated-run experiments                 |
+| `experiments/run_figure2.py`         | Generate Figure 2 boxplots                             |
+| `experiments/run_figure3.py`         | Generate Figure 3 plots from two result folders        |
+| `experiments/test_llm_agent.py`      | LLM parsing and behavior tests                         |
+| `experiments/test_state_api.py`      | State API smoke tests                                  |
+| `experiments/smoke_test.py`          | Minimal integration smoke test                         |
+| `evaluation/compare_models.py`       | Repeated model comparison evaluation                   |
+| `evaluation/repeated_runs.py`       | Paper-aligned repeated-run experiment engine           |
 
-### LLM experiment loop (`experiments/llm_experiment.py`)
+### Repeated-run experiment
 
-```
-reset()
-loop until done:
-    states = env.get_all_states()
-    for each echelon:
-        actions[name] = LLMAgent.generate_order(states[name])
-    _, reward, done, info = env.step(actions)
-    append row to metrics list
-save CSV → results/llm_experiment_results.csv
-generate plots → plots/llm_*.png
-```
+`evaluation/repeated_runs.py` executes repeated episodes with the same demand path and exports:
 
-### Model comparison (`evaluation/compare_models.py`)
-
-```
-for model in [qwen2.5:1.5b, deepseek-r1:1.5b, base_stock]:
-    for run_id in range(repeats):
-        seed = 1000 + run_id
-        run simulation (LLM or base_stock)
-        collect: total_cost, bullwhip, avg_backlog, reward_trajectory, instability
-save results/model_comparison.csv
-aggregate → results/model_comparison_summary.csv
-average weekly series → plots/comparison/*.png
-```
-
-`--offline` replaces LLM calls with a fixed order stub (no Ollama).
-
-### Classical policies (`policies/`)
-
-| Module              | Function                                           | Policy                             |
-| ------------------- | -------------------------------------------------- | ---------------------------------- |
-| `base_stock.py`     | `base_stock_order(state, target=20)`               | Order-up-to target level           |
-| `moving_average.py` | `moving_average_order(state, demand_history, ...)` | Demand forecast from moving window |
-| `random_policy.py`  | `random_order(state, low, high)`                   | Uniform random order               |
-
-`policies/classical_policies.py` duplicates base-stock and moving-average for legacy imports.
+- run histories
+- total cost summaries
+- metric reports
+- JSONL trajectories
+- optionally LLM and heuristic policies
 
 ---
 
@@ -390,22 +257,13 @@ average weekly series → plots/comparison/*.png
 {
     "inventory": int,
     "backlog": int,
-    "incoming_shipments": int,      # sum of pipeline deque
-    "pipeline_inventory": int,      # same as incoming_shipments
-    "last_customer_demand": int,    # downstream signal
+    "incoming_shipments": int,
+    "pipeline_inventory": int,
+    "last_customer_demand": int,
     "last_order": int,
     "current_week": int,
 }
 ```
-
-**Downstream demand mapping:**
-
-| Agent       | `last_customer_demand`     |
-| ----------- | -------------------------- |
-| Retailer    | Last customer demand       |
-| Wholesaler  | Retailer's `last_order`    |
-| Distributor | Wholesaler's `last_order`  |
-| Factory     | Distributor's `last_order` |
 
 ### `step(actions)` contract
 
@@ -419,7 +277,7 @@ actions = {
 next_state, reward, done, info = env.step(actions)
 ```
 
-Missing keys default to order `0`.
+Missing keys default to `0`.
 
 ---
 
@@ -428,49 +286,27 @@ Missing keys default to order `0`.
 ```
 ai_supplychain/
 ├── simulator/
-│   ├── beer_game.py      # BeerGame environment (primary)
-│   ├── environment.py    # Alias for RL
-│   ├── config.py         # SimulationConfig, orchestrator modes
-│   ├── demand.py         # Fixed/stochastic demand paths
-│   ├── rewards.py        # Shaped reward
-│   ├── orchestrator.py   # Information-sharing regimes
-│   └── node.py           # SupplyChainNode
-├── configs/              # YAML experiments + loader
-├── trajectories/         # Standardized rollout export
-├── docs/                 # RESEARCH_NOTES, REPLICATION_PLAN, METRICS
+│   ├── beer_game.py
+│   ├── environment.py
+│   ├── config.py
+│   ├── demand.py
+│   ├── rewards.py
+│   ├── orchestrator.py
+│   └── node.py
+├── configs/
+├── trajectories/
+├── docs/
 ├── agents/
-│   └── llm_agent.py      # Ollama LLMAgent
-├── policies/
-│   ├── base_stock.py
-│   ├── moving_average.py
-│   ├── random_policy.py
-│   └── classical_policies.py
-├── metrics/
-│   ├── bullwhip.py
-│   ├── agent_bullwhip.py
-│   ├── reliability.py
-│   ├── cost_analysis.py
-│   └── stability.py
-├── evaluation/
-│   ├── compare_models.py
-│   ├── repeated_runs.py
-│   ├── benchmark.py
-│   ├── plotting.py
-│   └── comparison_plots.py
-├── agents/
+│   ├── llm_agent.py
+│   ├── llm_backends.py
 │   └── constraints.py
+├── policies/
+├── metrics/
+├── evaluation/
 ├── experiments/
-│   ├── llm_experiment.py
-│   ├── baseline_experiment.py
-│   ├── test_llm_agent.py
-│   ├── test_state_api.py
-│   └── smoke_test.py
-├── results/              # CSV outputs (gitignored recommended)
-├── plots/                # Generated figures
-├── env/                  # Reserved (empty — future Gymnasium wrapper)
-├── train/                # Reserved (empty — future PPO/GRPO)
-├── notebooks/            # Reserved (empty)
-├── main.py               # CLI
+├── results/
+├── plots/
+├── main.py
 ├── requirements.txt
 ├── README.md
 ├── SETUP.md
@@ -480,8 +316,6 @@ ai_supplychain/
 ---
 
 ## 11. Data Flow
-
-### End-to-end LLM experiment
 
 ```mermaid
 flowchart TD
@@ -494,26 +328,11 @@ flowchart TD
     F --> G[CSV + plots]
 ```
 
-### History dict schema (`get_history()`)
-
-```python
-history = {
-    "demand": [int, ...],
-    "orders": {"Retailer": [...], "Wholesaler": [...], ...},
-    "inventory": {"Retailer": [...], ...},
-    "backlog": {"Retailer": [...], ...},
-    "step_cost": [float, ...],           # per-week system cost
-    "total_cost": [float, ...],          # cumulative system cost
-    "bullwhip": [dict | None, ...],      # weekly snapshot
-    "reward": [float, ...],              # shaped reward per week
-}
-```
-
 ---
 
-## 12. Ollama Interaction
+## 12. Ollama / Backend Interaction
 
-### HTTP request
+### Ollama request shape
 
 ```
 POST {ollama_url}/api/generate
@@ -523,260 +342,26 @@ Content-Type: application/json
   "model": "<model_name>",
   "prompt": "<built prompt>",
   "stream": false,
-  "options": {"temperature": 0.2}
+  "options": {"temperature": 0.2, "num_predict": 8}
 }
-```
-
-### Response handling
-
-```python
-data = response.json()
-text = data.get("response", data.get("text", "")).strip()
 ```
 
 ### Error handling
 
-| Condition            | Behavior                                     |
-| -------------------- | -------------------------------------------- |
-| Connection refused   | Log error; `query_model` returns `None`      |
-| HTTP / timeout error | Log error; `None`                            |
-| Unparseable response | `parse_order` returns `fallback` (default 0) |
-
-Each echelon makes **one API call per week** → 4 × `max_weeks` calls per experiment.
+- connection errors return `None`
+- timeouts return `None`
+- parse failures fall back to the heuristic/default order
 
 ---
 
-## 13. Future RL / PPO / GRPO
+## 13. Future / Not Implemented
 
-**Not implemented.** Reserved design based on current hooks:
+Missing repo capabilities:
 
-| Component            | Current state          | Planned use                             |
-| -------------------- | ---------------------- | --------------------------------------- |
-| `get_trajectories()` | ✓ Populated each step  | PPO / GRPO rollout buffer               |
-| Shaped reward        | ✓ Configurable α, β, γ | Training signal                         |
-| `get_state_dict()`   | ✓ Fixed schema         | Policy network input                    |
-| `train/`             | Empty directory        | Training scripts                        |
-| `env/`               | Empty directory        | Gymnasium wrapper                       |
-| Gymnasium API        | Not present            | `gymnasium.Env` adapter over `BeerGame` |
-| PPO / GRPO           | Not present            | Per-echelon or centralized training     |
+- dedicated Gymnasium adapter
+- RL training loops or GRPO/PPO pipeline
+- human baseline dataset and explicit paper comparisons
+- Law of Total Variance decomposition
+- dedicated Figure 4 / Figure 5 post-training workflows
 
-### Anticipated PPO loop (conceptual)
-
-```
-for episode:
-    obs = env.reset()
-    while not done:
-        actions = policy(obs)           # neural or fine-tuned LLM
-        obs, reward, done, info = env.step(actions)
-        buffer.add(env.get_trajectories()[-4:])   # last step transitions
-    policy.update(buffer)
-```
-
-### Anticipated GRPO use
-
-- Sample **groups** of order decisions from an LLM policy.
-- Rank by shaped reward (cost + stability).
-- Update prompts or LoRA weights relative to group baseline.
-
----
-
-## Design Constraints (Current)
-
-1. **No inter-agent communication** — strictly decentralized partial observability.
-2. **Shared reward** — all agents receive the same scalar reward each step.
-3. **Stochastic demand** — i.i.d. uniform integer demand; no exogenous time series.
-4. **Homogeneous nodes** — same lead time and cost parameters unless `SupplyChainNode` is customized in code.
-5. **No Gymnasium** — callers must wrap `BeerGame` themselves for now.
-
----
-
-For installation and commands, see [SETUP.md](SETUP.md). For a project summary, see [README.md](README.md).
-
----
-
-# Architecture
-
-This is the short version of how the code fits together.
-
-## One-Sentence Summary
-
-The project runs a four-role Beer Game, lets either simple policies or LLM agents place orders, records every decision, and turns repeated runs into reliability metrics and box plots.
-
-## Core Flow
-
-```text
-policy or LLM agent
-        |
-        v
-simulator/beer_game.py
-        |
-        v
-history + trajectories
-        |
-        v
-metrics + plots
-```
-
-## Main Components
-
-| Component       | File or folder                | Job                                                         |
-| --------------- | ----------------------------- | ----------------------------------------------------------- |
-| Simulator       | `simulator/beer_game.py`      | Runs the Beer Game week by week                             |
-| Node            | `simulator/node.py`           | Stores one role's inventory, backlog, shipments, and orders |
-| LLM agent       | `agents/llm_agent.py`         | Builds a prompt, calls Ollama, parses an order number       |
-| Constraints     | `agents/constraints.py`       | Clips or adjusts unsafe orders                              |
-| Simple policies | `policies/`                   | Base-stock, moving-average, random policies                 |
-| Repeated runs   | `evaluation/repeated_runs.py` | Runs the same experiment many times                         |
-| Plotting        | `evaluation/plotting.py`      | Generates research plots and Figure 2-style box plots       |
-| Metrics         | `metrics/`                    | Cost, reliability, bullwhip, agent bullwhip                 |
-| Wrappers        | `experiments/`                | Friendly scripts for common tasks                           |
-
-## Weekly Simulator Step
-
-Each call to `BeerGame.step(actions)` does this:
-
-```text
-1. Receive shipments already in the pipeline
-2. Generate customer demand
-3. Fulfill demand and update backlog
-4. Ship products downstream
-5. Add factory production
-6. Apply each role's new order
-7. Compute cost
-8. Record history
-9. Record trajectories
-10. Move to the next week
-```
-
-The action format is:
-
-```python
-actions = {
-    "Retailer": 7,
-    "Wholesaler": 9,
-    "Distributor": 10,
-    "Factory": 12,
-}
-```
-
-## What Gets Recorded
-
-The simulator records two useful things.
-
-### 1. History
-
-Used for metrics:
-
-```text
-demand
-orders
-inventory
-backlog
-cost
-bullwhip
-reward
-```
-
-### 2. Trajectories
-
-Used for learning and Figure 2:
-
-```python
-{
-    "week": 1,
-    "agent": "Retailer",
-    "state": {...},
-    "action": 7,
-    "reward": -31.0,
-    "next_state": {...}
-}
-```
-
-The boxplot script mainly reads:
-
-```text
-week
-agent
-action
-```
-
-## Figure 2 Pipeline
-
-```text
-1. Run repeated episodes
-   evaluation/repeated_runs.py
-
-2. Save all decisions
-   results/repeated_runs/trajectories/rollouts.jsonl
-
-3. Aggregate orders by role and week
-   evaluation/plotting.py
-
-4. Draw box plots
-   plots/figure2_bullwhip_boxplots.png
-```
-
-Command:
-
-```powershell
-python evaluation/repeated_runs.py --weeks 30 --runs 30 --model qwen2.5:1.5b
-python experiments/run_figure2.py --results results/repeated_runs --output plots/
-```
-
-## Classical Bullwhip vs Agent Bullwhip
-
-| Concept            | Variance measured across       | Meaning                                 |
-| ------------------ | ------------------------------ | --------------------------------------- |
-| Classical bullwhip | Time inside one run            | Demand/order variability amplification  |
-| Agent bullwhip     | Repeated runs at the same week | AI decision unreliability amplification |
-
-For the paper's Figure 2, focus on **agent bullwhip**.
-
-## LLM Agent Flow
-
-```text
-state dict
-   |
-   v
-prompt text
-   |
-   v
-Ollama API
-   |
-   v
-raw model response
-   |
-   v
-parse integer order
-   |
-   v
-clamp to allowed range
-```
-
-If parsing fails, the agent falls back to a default order.
-
-## Where To Start Reading Code
-
-Read in this order:
-
-1. `experiments/run_figure2.py`
-2. `evaluation/plotting.py`
-3. `evaluation/repeated_runs.py`
-4. `simulator/beer_game.py`
-5. `agents/llm_agent.py`
-
-That path follows the actual replication workflow from output back to the simulator.
-
-## Things Not Implemented Yet
-
-These ideas appear in the research direction but are not finished replication components:
-
-```text
-human baseline comparison
-exact paper model matching
-GRPO/PPO training
-Gymnasium wrapper
-full theoretical transfer-function analysis
-```
-
-Treat them as future learning topics, not as prerequisites for the current Figure 2 goal.
+For installation and usage, see `SETUP.md` and `README.md`.

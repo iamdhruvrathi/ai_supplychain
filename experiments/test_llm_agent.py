@@ -42,8 +42,70 @@ def test_prompt_building() -> None:
     print(f"Sample prompt:\n{prompt}\n")
 
 
+def test_tool_prompt_and_metadata() -> None:
+    agent = LLMAgent(
+        agent_name="Retailer",
+        model_name="qwen:1.5b",
+        use_tool_recommendation=True,
+    )
+
+    state = {
+        "inventory": 12,
+        "backlog": 5,
+        "incoming_shipments": 0,
+        "pipeline_inventory": 0,
+        "last_customer_demand": 8,
+        "last_order": 10,
+        "current_week": 1,
+        "lead_time": 2,
+    }
+
+    prompt = agent.build_prompt(state)
+    assert "Tool Recommendation:" in prompt
+    assert "Order 9 units." in prompt
+    assert "You may follow or ignore this recommendation." in prompt
+
+    original = agent.query_model
+    agent.query_model = lambda prompt: "11"
+    try:
+        order = agent.generate_order(state, fallback=0)
+    finally:
+        agent.query_model = original
+
+    assert order == 11
+    assert agent.last_decision_metadata["tool_order"] == 9
+    assert agent.last_decision_metadata["llm_order"] == 11
+    assert agent.last_decision_metadata["difference"] == 2
+    print("[OK] Tool prompt and metadata test passed\n")
+
+
+def test_negotiation_prompt_context() -> None:
+    agent = LLMAgent(agent_name="Retailer", model_name="qwen:1.5b")
+    state = {
+        "inventory": 15,
+        "backlog": 2,
+        "incoming_shipments": 5,
+        "pipeline_inventory": 5,
+        "last_customer_demand": 8,
+        "last_order": 10,
+        "current_week": 7,
+        "negotiation_proposals": {
+            "Retailer": 25,
+            "Wholesaler": 18,
+            "Distributor": 16,
+            "Factory": 15,
+        },
+    }
+
+    prompt = agent.build_prompt(state)
+    assert "Other agents propose:" in prompt
+    assert "Retailer: 25" in prompt
+    assert "Would you revise your order?" in prompt
+    print("[OK] Negotiation prompt context test passed\n")
+
+
 def test_parsing() -> None:
-    agent = LLMAgent(agent_name="Retailer", max_order=10000)
+    agent = LLMAgent(agent_name="Retailer", max_order=100)
 
     cases = [
         ("15", 15),
@@ -97,6 +159,10 @@ def test_trajectory_logging() -> None:
     }
     assert required <= entry.keys()
     assert entry["action"] == 5
+    assert "tool_order" in entry
+    assert "llm_order" in entry
+    assert "difference" in entry
+    assert "consensus_gap" in entry
     print("[OK] Trajectory logging test passed\n")
 
 
@@ -192,6 +258,8 @@ def main() -> None:
 
     print("Running LLM agent tests...\n")
     test_prompt_building()
+    test_tool_prompt_and_metadata()
+    test_negotiation_prompt_context()
     test_parsing()
     test_connection_fallback()
     test_trajectory_logging()

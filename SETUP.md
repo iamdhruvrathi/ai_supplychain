@@ -1,12 +1,6 @@
-# Setup For Qwen2.5
+﻿# Setup For Qwen2.5
 
-This project is currently configured for:
-
-```text
-qwen2.5:1.5b
-```
-
-Qwen3 was removed from the recommended path because its reasoning output is slow for repeated simulations.
+This project is configured around local Ollama inference. The recommended model for repeated LLM experiments is `qwen2.5:1.5b`.
 
 ## Install
 
@@ -17,38 +11,51 @@ venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-## Ollama
+## Start Ollama
 
 ```powershell
 ollama serve
 ollama pull qwen2.5:1.5b
-ollama list
 ```
 
-## Verify Python
+If you want to use Groq, set up the Groq backend separately and pass `--backend groq` to applicable scripts.
+
+## Verify Python environment
+
+```powershell
+python -c "import pandas, matplotlib, requests, numpy, yaml; print('OK')"
+```
+
+## Basic validation
 
 ```powershell
 python main.py test-llm
 python main.py test-state
+python experiments/smoke_test.py
 ```
 
-## Verify Pipeline Without Ollama
+## Offline pipeline validation
 
 ```powershell
 python evaluation/repeated_runs.py --weeks 5 --runs 2 --offline --progress week --output-dir results/offline_debug
 python experiments/run_figure2.py --results results/offline_debug --output plots/
 ```
 
-## Verify Qwen2.5
+## Small Qwen2.5 trial
 
 ```powershell
 python evaluation/repeated_runs.py --weeks 5 --runs 2 --model qwen2.5:1.5b --progress week --output-dir results/qwen25_debug
 python experiments/run_figure2.py --results results/qwen25_debug --output plots/
 ```
 
-## Figure 3 Majority Vote
+## Full repeated-run experiment
 
-Start tiny:
+```powershell
+python evaluation/repeated_runs.py --weeks 30 --runs 10 --model qwen2.5:1.5b --progress run --output-dir results/qwen25_mit_10runs
+python experiments/run_figure2.py --results results/qwen25_mit_10runs --output plots/
+```
+
+## Majority-vote debugging
 
 ```powershell
 python experiments/run_majority_vote.py --weeks 5 --runs 2 --model qwen2.5:1.5b --n-samples 10 --output-dir results/fig3_qwen25_n10_debug --progress run
@@ -56,187 +63,21 @@ python experiments/run_majority_vote.py --weeks 5 --runs 2 --model qwen2.5:1.5b 
 python experiments/run_figure3.py --results-10 results/fig3_qwen25_n10_debug --results-100 results/fig3_qwen25_n100_debug --output plots/
 ```
 
-The output is:
+## Important notes
 
-```text
-plots/figure3_majority_vote_boxplots.png
-```
+- `experiments/smoke_test.py` is the repository's smoke test entry point. There is no `experiments/run_smoke_tests.py` file.
+- `evaluation/compare_models.py --offline` uses a stub order function for LLM models.
+- There is no training pipeline, no RL training wrapper in `train/`, and no dedicated Gymnasium environment.
 
-## Faster Development Settings
-
-```powershell
-# Tiny
-python evaluation/repeated_runs.py --weeks 5 --runs 2 --model qwen2.5:1.5b --progress week --output-dir results/qwen25_debug
-
-# Medium
-python evaluation/repeated_runs.py --weeks 30 --runs 10 --model qwen2.5:1.5b --progress run --output-dir results/qwen25_mit_10runs
-
-# Full
-python evaluation/repeated_runs.py --weeks 30 --runs 30 --model qwen2.5:1.5b --progress run --output-dir results/qwen25_mit_30runs
-```
-
-## GPU
-
-Python does not directly use CUDA. Ollama uses the GPU if your install supports it.
-
-Check while a model is running:
+## Recommended commands via `main.py`
 
 ```powershell
-nvidia-smi
+python main.py test-llm
+python main.py test-state
+python main.py baseline
+python main.py llm --weeks 30 --model qwen:1.5b
+python main.py repeated --weeks 30 --runs 10 --model qwen2.5:1.5b
+python main.py compare --weeks 10 --repeats 3
+python main.py benchmark --config configs/default_experiment.yaml
+python main.py demo
 ```
-
-## If Output Looks Flat
-
-Offline runs are deterministic, so the boxes may be flat. Use `--model qwen2.5:1.5b` to see LLM decision variability.
-
-# Setup
-
-Use this guide only to get the project running. For the research logic, read `docs/REPLICATION_PLAN.md`.
-
-## 1. Python Environment
-
-From the repo root:
-
-```powershell
-cd D:\GitHub\ai_supplychain
-python -m venv venv
-venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-Check that the main packages import:
-
-```powershell
-python -c "import pandas, matplotlib, requests; print('OK')"
-```
-
-## 2. No-LLM Smoke Test
-
-Run this first:
-
-```powershell
-python experiments/run_smoke_tests.py
-```
-
-This should create or update:
-
-```text
-results/qwen25_mit_10runs/repeated_runs_report.json
-results/qwen25_mit_10runs/run_costs.csv
-results/qwen25_mit_10runs/trajectories/rollouts.jsonl
-plots/figure2_bullwhip_boxplots.png
-results/table1.csv
-```
-
-This test uses a non-LLM policy. It proves the pipeline works, but it does not reproduce the paper's LLM variability.
-
-## 3. Ollama Setup For LLM Experiments
-
-Install Ollama from:
-
-```text
-https://ollama.com
-```
-
-Start the server:
-
-```powershell
-ollama serve
-```
-
-Pull a small model:
-
-```powershell
-ollama pull qwen2.5:1.5b
-```
-
-Optional second model:
-
-```powershell
-ollama pull deepseek-r1:1.5b
-```
-
-Check Ollama is reachable:
-
-```powershell
-curl http://localhost:11434/api/tags
-```
-
-## 4. Short LLM Trial
-
-Before doing 30 full runs, try something small:
-
-```powershell
-python evaluation/repeated_runs.py --weeks 5 --runs 3 --model qwen2.5:1.5b
-python experiments/run_figure2.py --results results/repeated_runs --output plots/
-```
-
-Then open:
-
-```text
-plots/figure2_bullwhip_boxplots.png
-```
-
-## 5. Full Figure 2-Style Run
-
-```powershell
-python evaluation/repeated_runs.py --weeks 30 --runs 10 --model qwen2.5:1.5b --progress run --output-dir results/qwen25_mit_10runs
-python experiments/run_figure2.py --results results/qwen25_mit_10runs --output plots/
-```
-
-Outputs:
-
-```text
-results/qwen25_mit_10runs/repeated_runs_report.json
-results/qwen25_mit_10runs/trajectories/rollouts.jsonl
-plots/figure2_bullwhip_boxplots.png
-plots/figure2_bullwhip_boxplots.pdf
-```
-
-## 6. Troubleshooting
-
-### Python command is not found
-
-Try:
-
-```powershell
-py -m venv venv
-```
-
-or use the full path to your Python executable.
-
-### Ollama connection fails
-
-Make sure this is running in another terminal:
-
-```powershell
-ollama serve
-```
-
-Then test:
-
-```powershell
-curl http://localhost:11434/api/tags
-```
-
-### Model is not found
-
-Pull it:
-
-```powershell
-ollama pull qwen2.5:1.5b
-```
-
-### LLM runs are slow
-
-Use fewer weeks and runs while learning:
-
-```powershell
-python evaluation/repeated_runs.py --weeks 5 --runs 3 --model qwen2.5:1.5b
-```
-
-Full 30-run experiments can take a long time because each week makes four model calls.
-
-### Box plots are flat
-
-If you used `--offline`, flat plots are expected. Offline/base-stock behavior is mostly deterministic. Use `--model qwen2.5:1.5b` to study LLM run-to-run variability.s

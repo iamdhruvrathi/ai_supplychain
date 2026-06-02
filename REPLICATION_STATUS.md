@@ -1,131 +1,97 @@
-# Research Replication Status
+﻿# Research Replication Status
 
 ## Repository Overview
 
-This repository implements a Beer Game replication framework centered on a local LLM agent workflow, repeated-run evaluation, agent bullwhip metrics, and figure generation.
+This repository implements a Beer Game replication framework around local LLM agents, repeated-run evaluation, and bullwhip analysis.
 
 Key components:
 
 - `simulator/beer_game.py`: Beer Game environment with 4 echelons, lead time, inventory, backlog, pipeline inventory, and cost accounting.
-- `agents/llm_agent.py`: LLM prompt construction, parse logic, agent decision generation, and majority-vote sampling.
+- `agents/llm_agent.py`: LLM prompt construction, output parsing, decision generation, tool recommendation support, and majority-vote sampling.
 - `agents/llm_backends.py`: Backend abstraction with `OllamaBackend` and `GroqBackend`.
-- `evaluation/repeated_runs.py`: Fixed-demand repeated-run experiment engine, agent metrics export, and trajectory writer.
-- `evaluation/plotting.py`: Figure 2/3 plotting helpers and exported PDF/PNG figures.
-- `metrics/agent_bullwhip.py`: Agent bullwhip metrics including σ², Ψ, Φ and per-echelon summaries.
+- `evaluation/repeated_runs.py`: Fixed-demand repeated-run experiment engine, metrics export, and trajectory writer.
+- `evaluation/plotting.py`: Figure 2/3 plotting helpers and exported PNG/PDF figures.
+- `metrics/agent_bullwhip.py`: Agent bullwhip metrics, including sigma-squared, psi, and phi computations.
 - `experiments/run_figure2.py`: Figure 2-style box plot wrapper.
-- `experiments/run_majority_vote.py`: Majority-vote experiment wrapper.
-- `experiments/run_figure3.py`: Figure 3-style majority-vote plot wrapper.
-- `docs/GROQ_QWEN3_SETUP.md`: Groq + Qwen3 remote backend setup documentation.
-- `scripts/groq_smoke_test.py`: Groq SDK smoke test.
-- `scripts/groq_smoke_test_postproc.py`: Groq post-processing validation.
+- `experiments/run_majority_vote.py`: Majority-vote repeated-run wrapper.
+- `experiments/smoke_test.py`: Minimal integration smoke test.
+- `docs/GROQ_QWEN3_SETUP.md`: Groq + Qwen3 backend setup documentation.
 
 ## Paper Replication Checklist
 
-| Component                                          | Status      | Evidence                                                                                                     | Notes                                                                                            |
-| -------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| MIT Beer Game environment                          | ✅ Complete | `simulator/beer_game.py`, `simulator/config.py`                                                              | 4-echelon chain, lead time, inventory/backlog, shipments, and cost tracking are implemented.     |
-| 4-echelon supply chain                             | ✅ Complete | `BeerGame.__init__`, node classes                                                                            | Retailer/Wholesaler/Distributor/Factory present; factory production modelled.                    |
-| Lead times, inventory, backlog, pipeline inventory | ✅ Complete | `simulator/beer_game.py`, `simulator/node.py`                                                                | `incoming_shipments`, `pipeline_inventory`, `inventory`, and `backlog` are tracked per node.     |
-| Cost calculations                                  | ✅ Complete | `simulator/beer_game.py`, `simulator/node.py`, `metrics/cost_analysis.py`                                    | Per-step and total costs are recorded.                                                           |
-| Local decentralized LLM agents                     | ✅ Complete | `agents/llm_agent.py`, `evaluation/repeated_runs.py`                                                         | Agents make decentralized decisions using local model inference.                                 |
-| Prompt engineering / orchestrator modes            | ✅ Partial  | `agents/llm_agent.py`, `simulator/orchestrator.py`, `simulator/config.py`                                    | Orchestrator and prompt logic exist; paper-style prompt ablations are not explicitly documented. |
-| Majority voting implementation                     | ✅ Partial  | `agents/llm_agent.py`, `experiments/run_majority_vote.py`, `experiments/run_figure3.py`                      | Majority-vote logic is implemented.                                                              |
-| Fixed demand repeated runs                         | ✅ Complete | `evaluation/repeated_runs.py`, `simulator/demand.py`                                                         | Fixed-demand path and deterministic run support are present.                                     |
-| Agent bullwhip metrics                             | ✅ Complete | `metrics/agent_bullwhip.py`, `evaluation/repeated_runs.py`                                                   | Metrics include `sigma_squared`, `psi`, `phi`, and per-echelon summaries.                        |
-| Figure 2 boxplot generation                        | ✅ Complete | `experiments/run_figure2.py`, `evaluation/plotting.py`, `plots/figure2_bullwhip_boxplots.png`                | Figure 2 artifacts are present.                                                                  |
-| Figure 3 majority-vote plots                       | ✅ Partial  | `experiments/run_majority_vote.py`, `experiments/run_figure3.py`, `plots/figure3_majority_vote_boxplots.png` | Plot generation exists; some result folders require validation.                                  |
-| Groq / Qwen3 remote backend support                | ✅ Partial  | `agents/llm_backends.py`, `docs/GROQ_QWEN3_SETUP.md`, `scripts/groq_smoke_test.py`                           | Backend support and docs exist; completed Groq experiment evidence is not fully validated.       |
-| Reliability metrics                                | ✅ Complete | `metrics/reliability.py`, `evaluation/repeated_runs.py`                                                      | CV, instability, tail-event, and failure count metrics are produced.                             |
-| Law of Total Variance / decomposition              | ❌ Missing  | No code found                                                                                                | Only bullwhip metric calculations are implemented.                                               |
-| GRPO training / PPO                                | ❌ Missing  | No training code                                                                                             | No training pipeline is present.                                                                 |
-| Figure 4 post-training reliability                 | ❌ Missing  | No scripts or results                                                                                        | Lacks trained-agent reliability figure generation.                                               |
-| Figure 5 post-training cost comparison             | ❌ Missing  | No scripts or results                                                                                        | Lacks post-training cost comparison artifacts.                                                   |
-| Human baseline comparison                          | ❌ Missing  | No baseline data or loader                                                                                   | No explicit human baseline integration.                                                          |
+| Component                                          | Status      | Evidence                                                                                                     | Notes                                                                                          |
+| -------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| MIT Beer Game environment                          | ✅ Complete | `simulator/beer_game.py`, `simulator/config.py`                                                              | 4-echelon chain, lead time, inventory/backlog, shipments, and cost tracking are implemented.   |
+| 4-echelon supply chain                             | ✅ Complete | `BeerGame.__init__`, node classes                                                                            | Retailer/Wholesaler/Distributor/Factory present; factory production modeled.                    |
+| Lead times, inventory, backlog, pipeline inventory | ✅ Complete | `simulator/beer_game.py`, `simulator/node.py`                                                                | `incoming_shipments`, `pipeline_inventory`, `inventory`, and `backlog` are tracked per node.   |
+| Cost calculations                                  | ✅ Complete | `simulator/beer_game.py`, `simulator/node.py`, `metrics/cost_analysis.py`                                    | Per-step and total costs are recorded.                                                         |
+| Local decentralized LLM agents                     | ✅ Complete | `agents/llm_agent.py`, `evaluation/repeated_runs.py`                                                         | Agents make decentralized decisions with local state.                                          |
+| Prompt engineering / orchestrator modes            | ✅ Partial  | `agents/llm_agent.py`, `simulator/orchestrator.py`, `simulator/config.py`                                    | Orchestrator and shared-state modes exist; paper-style ablation studies are not documented.    |
+| Majority voting implementation                     | ✅ Partial  | `agents/llm_agent.py`, `experiments/run_majority_vote.py`, `experiments/run_figure3.py`                      | Majority-vote logic is implemented.                                                            |
+| Fixed demand repeated runs                         | ✅ Complete | `evaluation/repeated_runs.py`, `simulator/demand.py`                                                         | Fixed-demand path and deterministic run support are present.                                   |
+| Agent bullwhip metrics                             | ✅ Complete | `metrics/agent_bullwhip.py`, `evaluation/repeated_runs.py`                                                   | Metrics include per-agent and across-run bullwhip analysis.                                   |
+| Figure 2 boxplot generation                        | ✅ Complete | `experiments/run_figure2.py`, `evaluation/plotting.py`, `plots/figure2_bullwhip_boxplots.png`                | Figure 2 artifact files are present.                                                           |
+| Figure 3 majority-vote plots                       | ✅ Partial  | `experiments/run_majority_vote.py`, `experiments/run_figure3.py`, `plots/figure3_majority_vote_boxplots.png` | Plot generation exists; result folder validation is partial.                                   |
+| Groq / Qwen3 remote backend support                | ✅ Partial  | `agents/llm_backends.py`, `docs/GROQ_QWEN3_SETUP.md`, `scripts/groq_smoke_test.py`                           | Groq backend adapter and docs exist; end-to-end validation is not fully confirmed.             |
+| Reliability metrics                                | ✅ Complete | `metrics/reliability.py`, `evaluation/repeated_runs.py`                                                      | CV, instability, and backlog metrics are produced.                                             |
+| Law of Total Variance / decomposition              | ❌ Missing  | No code found                                                                                                | Only bullwhip metric calculations are implemented.                                             |
+| GRPO training / PPO                                | ❌ Missing  | No training code                                                                                             | No training or policy optimization pipeline is present.                                       |
+| Figure 4 post-training reliability                 | ❌ Missing  | No scripts or results                                                                                        | No post-training reliability workflow exists.                                                 |
+| Figure 5 post-training cost comparison             | ❌ Missing  | No scripts or results                                                                                        | No post-training cost-comparison figure implementation.                                       |
+| Human baseline comparison                          | ❌ Missing  | No baseline dataset or loader                                                                                | No human baseline data or explicit comparison pipeline exists.                                |
 
-## Figures Reproduced
+## Figures and artifacts
 
 ### Figure 1
 
 - Status: 🟡 Partial
-- Evidence: `evaluation/compare_models.py` and `experiments/llm_experiment.py` support model comparisons.
-- Notes: No explicit human baseline figure or dataset. Paper-style Figure 1 is not fully reproduced.
+- Evidence: `evaluation/compare_models.py`, `experiments/llm_experiment.py`
+- Notes: Multi-model comparison support exists, but human baseline and exact paper dataset are absent.
 
 ### Figure 2
 
 - Status: ✅ Complete
-- Evidence: `evaluation/repeated_runs.py` and `experiments/run_figure2.py`; `plots/figure2_bullwhip_boxplots.png` and `.pdf` exist.
-- Notes: Current results include `results/qwen25_mit_10runs` and `results/qwen3_32b_fig2`, showing repeated-run experiment artifacts.
+- Evidence: `evaluation/repeated_runs.py`, `experiments/run_figure2.py`, `plots/figure2_bullwhip_boxplots.png`, `plots/figure2_bullwhip_boxplots.pdf`
+- Notes: Repeated-run experiment outputs are available under `results/`.
 
 ### Figure 3
 
-- Status: ✅ Partial
-- Evidence: Majority-vote experiment code and `plots/figure3_majority_vote_boxplots.png` / `.pdf`.
-- Notes: Plot artifacts exist, but repository evidence for fully validated N=10/N=100 experiment folders is partial. |
+- Status: ⏳ Partial
+- Evidence: `experiments/run_majority_vote.py`, `experiments/run_figure3.py`, `plots/figure3_majority_vote_boxplots.png`, `plots/figure3_majority_vote_boxplots.pdf`
+- Notes: Plot generation exists, but the result folder inventory and validation are incomplete.
 
-### Figure 4
-
-- Status: ❌ Missing
-- Evidence: none in code.
-- Notes: No training/post-training reliability workflow implemented. |
-
-### Figure 5
+### Figure 4 / Figure 5
 
 - Status: ❌ Missing
-- Evidence: none in code.
-- Notes: No post-training cost-comparison figure implementation. |
+- Notes: No training / post-training reliability or cost-comparison scripts are implemented.
 
-## Experiments and Artifacts
+## Confirmed outputs
 
-### Confirmed outputs
+- `results/qwen25_30runs/` — repeated-run experiment outputs.
+- `results/qwen3_32b_fig2/` — experiment artifacts for a qwen3-style run.
+- `results/qwen3_32b_fig3_n10/` — majority-vote run result folder.
+- `results/figure3_n10/` and `results/figure3_n100/` — additional result directories.
+- `plots/` contains generated figure PNG/PDF artifacts.
 
-- `results/qwen25_mit_10runs/` — repeated-run report, `run_costs.csv`, `trajectories/rollouts.jsonl`.
-- `results/qwen3_32b_fig2/` — generated result folder with trajectories.
-- `results/figure3_test_n10/` — folder exists but is currently empty.
-- `results/figure3_test_n100/` — folder exists but is currently empty.
+## Backend support
 
-### Plot artifacts
+- Ollama is the primary supported LLM backend.
+- `agents/llm_backends.py` exposes a Groq backend adapter.
+- `experiments/run_majority_vote.py` and `experiments/llm_experiment.py` accept `--backend`.
+- `evaluation/compare_models.py --offline` uses a stubbed LLM order function instead of real inference.
 
-- `plots/figure2_bullwhip_boxplots.png`
-- `plots/figure2_bullwhip_boxplots.pdf`
-- `plots/figure3_majority_vote_boxplots.png`
-- `plots/figure3_majority_vote_boxplots.pdf`
-- `plots/llm_orders_vs_demand.png`
-- `plots/llm_inventory_trajectories.png`
-- `plots/llm_backlog_trajectories.png`
-- `plots/llm_inventory_backlog.png`
-- `plots/llm_bullwhip_metrics.png`
-- `plots/llm_cumulative_cost.png`
+## Missing components and gaps
 
-## Groq / Qwen3 Support
-
-- `agents/llm_backends.py` implements a `GroqBackend` in addition to Ollama.
-- `agents/llm_agent.py` supports `--backend ollama` and `--backend groq`.
-- `evaluation/repeated_runs.py` and `experiments/run_majority_vote.py` include backend selection support.
-- `docs/GROQ_QWEN3_SETUP.md` documents how to run remote Groq `qwen/qwen3-4b` experiments.
-- `scripts/groq_smoke_test.py` and `scripts/groq_smoke_test_postproc.py` validate Groq API connectivity and output parsing.
-- `scripts/list_model.py` demonstrates Groq SDK usage.
-
-## Missing Components and Gaps
-
-1. No GRPO/PPO training pipeline or training code.
-2. No human baseline dataset, loader, or explicit human comparison figure.
+1. No RL training pipeline or GRPO/PPO implementation.
+2. No explicit human baseline data or comparison pipeline.
 3. No Law of Total Variance decomposition implementation.
-4. No dedicated Figure 4 or Figure 5 training/post-training artifacts.
-5. Current majority-vote result folders are partially present, but some are empty.
-6. Model mapping remains local/Ollama-first; cloud model provenance is not fully established.
+4. No dedicated Figure 4 or Figure 5 post-training workflows.
+5. `experiments/smoke_test.py` is the smoke test entry, but there is no `run_smoke_tests.py`.
+6. `experiments/run_table1.py` does not exist.
 
-## Recommended Next Steps
+## Recommended next steps
 
-1. Re-run Figure 2 with `results/qwen25_mit_10runs` and verify the generated plot.
-2. Re-run majority-vote experiments for `n=10` and `n=100` and confirm `results/figure3_*` contents.
-3. Add a baseline loader or synthetic human reference to support Figure 1-style comparisons.
-4. Add a training wrapper and Gym adapter if GRPO/PPO replication is required.
-
-## Overall Replication Summary
-
-- Core simulation and repeated-run framework: strong.
-- LLM inference and majority-vote support: present.
-- Figure 2 artifact reproduction: confirmed.
-- Figure 3 support: implemented but only partially validated.
-- Training/post-training components: absent.
-- Full paper replication: incomplete.
+1. Validate the existing Figure 2 workflow using `results/qwen25_30runs`.
+2. Re-run majority-vote experiments for `n=10` and `n=100` and confirm `results/figure3_*` outputs.
+3. Add human-baseline or synthetic baseline data to support paper comparison claims.
+4. Add a training wrapper and Gym-compatible RL environment if post-training replication is required.

@@ -57,6 +57,7 @@ def run_llm_experiment(
     ollama_url: str = "http://localhost:11434",
     max_order: int = 10000,
     results_file: str = "results/llm_experiment_results.csv",
+    use_tool_recommendation: bool = False,
 ) -> pd.DataFrame:
     """Run a complete LLM-driven Beer Game experiment."""
     logger.info("Starting LLM experiment with model: %s", model_name)
@@ -75,6 +76,7 @@ def run_llm_experiment(
             ollama_url=ollama_url,
             max_order=max_order,
             temperature=0.2,
+            use_tool_recommendation=use_tool_recommendation,
         )
         for name in ECHELONS
     }
@@ -88,8 +90,12 @@ def run_llm_experiment(
             name: agents[name].generate_order(states[name], fallback=0)
             for name in ECHELONS
         }
+        action_metadata = {
+            name: dict(agents[name].last_decision_metadata)
+            for name in ECHELONS
+        }
 
-        _, reward, done, info = env.step(actions)
+        _, reward, done, info = env.step(actions, action_metadata=action_metadata)
 
         bullwhip = info.get("bullwhip") or {}
         _log_week(
@@ -114,6 +120,11 @@ def run_llm_experiment(
             metric_row[f"order_{agent.name}"] = actions[agent.name]
             metric_row[f"inventory_{agent.name}"] = agent.inventory
             metric_row[f"backlog_{agent.name}"] = agent.backlog
+            metadata = action_metadata.get(agent.name, {})
+            metric_row[f"tool_order_{agent.name}"] = metadata.get("tool_order")
+            metric_row[f"llm_order_{agent.name}"] = metadata.get("llm_order")
+            metric_row[f"difference_{agent.name}"] = metadata.get("difference")
+        metric_row["consensus_gap"] = info.get("consensus_gap")
 
         metrics.append(metric_row)
 
@@ -209,6 +220,7 @@ if __name__ == "__main__":
         default="ollama",
         help="Inference backend to use (ollama or groq)",
     )
+    parser.add_argument("--use-tool-recommendation", action="store_true")
     args = parser.parse_args()
     try:
         run_llm_experiment(
@@ -217,6 +229,7 @@ if __name__ == "__main__":
             ollama_url=args.url,
             max_order=args.max_order,
             results_file=args.output,
+            use_tool_recommendation=args.use_tool_recommendation,
         )
         logger.info("Experiment completed successfully.")
     except Exception as exc:

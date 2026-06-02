@@ -18,6 +18,10 @@ class TrajectoryStep:
     model_name: Optional[str] = None
     week: int = 0
     agent_role: str = ""
+    tool_order: Optional[int] = None
+    llm_order: Optional[int] = None
+    difference: Optional[int] = None
+    consensus_gap: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -43,11 +47,16 @@ def standardize_trajectory(
                 info={
                     "cost": record.get("cost"),
                     "bullwhip": record.get("bullwhip"),
+                    "negotiation_proposals": record.get("negotiation_proposals"),
                 },
                 policy_type=policy_type,
                 model_name=model_name,
                 week=week,
                 agent_role=str(record.get("agent", "")),
+                tool_order=record.get("tool_order"),
+                llm_order=record.get("llm_order"),
+                difference=record.get("difference"),
+                consensus_gap=record.get("consensus_gap"),
             ).to_dict()
         )
     return standardized

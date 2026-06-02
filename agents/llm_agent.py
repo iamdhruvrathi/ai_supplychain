@@ -11,6 +11,8 @@ import re
 from collections import Counter
 from typing import Any, Dict, Optional
 
+from tools.inventory_tool import eoq_recommendation
+
 from .llm_backends import GroqBackend, OllamaBackend
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,7 @@ class LLMAgent:
         keep_alive: str = "30m",
         backend: str = "ollama",
         backend_kwargs: Optional[Dict[str, Any]] = None,
+        use_tool_recommendation: bool = False,
     ) -> None:
         self.agent_name = agent_name
         self.model_name = model_name
@@ -42,6 +45,8 @@ class LLMAgent:
         self.keep_alive = keep_alive
         self.backend_name = backend or "ollama"
         self.backend_kwargs = backend_kwargs or {}
+        self.use_tool_recommendation = bool(use_tool_recommendation)
+        self.last_decision_metadata: Dict[str, Any] = {}
 
         # Initialize the chosen backend. Keep Ollama behaviour unchanged by
         # default; Groq backend implemented in `agents.llm_backends`.
@@ -78,8 +83,38 @@ class LLMAgent:
             return ""
         return "\nOrchestrator shared data:\n" + "\n".join(f"* {ln}" for ln in lines) + "\n"
 
+    def _with_tool_recommendation(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Attach decision-support output when enabled."""
+        if not self.use_tool_recommendation:
+            return dict(state)
+        augmented = dict(state)
+        if "tool_order" not in augmented:
+            augmented["tool_order"] = eoq_recommendation(augmented)
+        return augmented
+
+    def _negotiation_context(self, state: Dict[str, Any]) -> str:
+        proposals = state.get("negotiation_proposals")
+        if not proposals:
+            return ""
+
+        lines = ["\nOther agents propose:"]
+        for name, order in proposals.items():
+            lines.append(f"{name}: {order}")
+        lines.append("\nWould you revise your order?")
+        return "\n".join(lines) + "\n"
+
+    def _tool_context(self, state: Dict[str, Any]) -> str:
+        if "tool_order" not in state:
+            return ""
+        return (
+            "\nTool Recommendation:\n"
+            f"Order {state['tool_order']} units.\n\n"
+            "You may follow or ignore this recommendation.\n"
+        )
+
     def build_prompt(self, state: Dict[str, Any]) -> str:
         """Build a structured prompt from the agent's local state."""
+        state = self._with_tool_recommendation(state)
         prompt = (
             "You are an inventory management agent in a multi-echelon "
             "supply chain Beer Game.\n\n"
@@ -97,7 +132,8 @@ class LLMAgent:
             f"Current week: {state.get('current_week', 0)}\n"
         )
         extra = self._orchestrator_context(state)
-        prompt = prompt + extra + (
+        prompt = prompt + extra + self._tool_context(state)
+        prompt = prompt + self._negotiation_context(state) + (
             "\nDecide how many units to order this week.\n\n"
             "Rules:\n"
             "* Return ONLY a single integer.\n"
@@ -197,10 +233,22 @@ class LLMAgent:
         fallback: int = 0,
     ) -> int:
         """Build prompt, query Ollama, and return a safe order quantity."""
-        prompt = self.build_prompt(state)
+        prompt_state = self._with_tool_recommendation(state)
+        prompt = self.build_prompt(prompt_state)
         response = self.query_model(prompt)
         parsed = self.parse_order(response, default=fallback)
-        return self._clamp_order(parsed)
+        order = self._clamp_order(parsed)
+        tool_order = prompt_state.get("tool_order")
+        self.last_decision_metadata = {
+            "tool_order": int(tool_order) if tool_order is not None else None,
+            "llm_order": int(order),
+            "difference": (
+                abs(int(order) - int(tool_order))
+                if tool_order is not None
+                else None
+            ),
+        }
+        return order
 
     def generate_order_majority_vote(
         self,
@@ -209,7 +257,8 @@ class LLMAgent:
         fallback: int = 0,
     ) -> int:
         """Sample n orders and return the most common parsed value."""
-        prompt = self.build_prompt(state)
+        prompt_state = self._with_tool_recommendation(state)
+        prompt = self.build_prompt(prompt_state)
         parsed_values = []
 
         for _ in range(max(1, int(n_samples))):
@@ -219,9 +268,21 @@ class LLMAgent:
                 parsed_values.append(parsed)
 
         if not parsed_values:
-            return self._clamp_order(fallback)
+            order = self._clamp_order(fallback)
+        else:
+            counts = Counter(parsed_values)
+            max_count = max(counts.values())
+            winners = [value for value, count in counts.items() if count == max_count]
+            order = self._clamp_order(min(winners))
 
-        counts = Counter(parsed_values)
-        max_count = max(counts.values())
-        winners = [value for value, count in counts.items() if count == max_count]
-        return self._clamp_order(min(winners))
+        tool_order = prompt_state.get("tool_order")
+        self.last_decision_metadata = {
+            "tool_order": int(tool_order) if tool_order is not None else None,
+            "llm_order": int(order),
+            "difference": (
+                abs(int(order) - int(tool_order))
+                if tool_order is not None
+                else None
+            ),
+        }
+        return order
