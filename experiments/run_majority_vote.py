@@ -33,7 +33,7 @@ def main(argv=None) -> int:
     parser.add_argument("--progress", choices=("none", "run", "week"), default="run")
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--temperature", type=float, default=0.2)
-    parser.add_argument("--num-predict", type=int, default=8)
+    parser.add_argument("--num-predict", type=int, default=32)
     parser.add_argument(
         "--backend",
         choices=("ollama", "groq", "vllm"),

@@ -253,7 +253,7 @@ class VLLMBackend(BaseLLMBackend):
                     },
                     {
                         "role": "user",
-                        "content": prompt,
+                        "content": "/no_think\n" + prompt,
                     },
                 ],
                 temperature=temperature,
