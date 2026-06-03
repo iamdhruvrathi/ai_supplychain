@@ -227,7 +227,7 @@ class VLLMBackend(BaseLLMBackend):
     def __init__(
         self,
         model_name: str,
-        base_url: str = "http://localhost:8000/v1",
+        base_url: str = "http://localhost:8001/v1",
         timeout: float = 120.0,
         **kwargs,
     ):

@@ -74,7 +74,7 @@ class LLMAgent:
                 model_name=self.model_name,
                 base_url=self.backend_kwargs.get(
                     "base_url",
-                    "http://localhost:8000/v1",
+                    "http://localhost:8001/v1",
                 ),
                 timeout=self.timeout,
             )
