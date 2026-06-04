@@ -97,12 +97,19 @@ class LLMAgent:
         return "\nOrchestrator shared data:\n" + "\n".join(f"* {ln}" for ln in lines) + "\n"
 
     def _with_tool_recommendation(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Attach decision-support output when enabled."""
+        """Attach decision-support output when enabled.
+        
+        Tool recommendations are clamped to [0, max_order] to ensure they
+        remain within the feasible action space. This prevents the LLM from
+        seeing out-of-bounds recommendations that it cannot follow.
+        """
         if not self.use_tool_recommendation:
             return dict(state)
         augmented = dict(state)
         if "tool_order" not in augmented:
-            augmented["tool_order"] = eoq_recommendation(augmented)
+            raw_recommendation = eoq_recommendation(augmented)
+            # Clamp recommendation to valid action space [0, max_order]
+            augmented["tool_order"] = max(0, min(self.max_order, raw_recommendation))
         return augmented
 
     def _negotiation_context(self, state: Dict[str, Any]) -> str:
