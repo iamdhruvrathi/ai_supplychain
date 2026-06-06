@@ -199,9 +199,10 @@ def run_repeated_experiment(
     export_trajectories: bool = True,
     timeout: float = 120.0,
     temperature: float = 0.2,
-    num_predict: int = 8,
+    num_predict: int = 32,
     progress: str = "run",
     n_samples: int = 1,
+    reasoning_mode: bool = False,
 ) -> Dict[str, Any]:
     """Execute R repeated runs and compute paper-aligned metrics."""
     os.makedirs(save_dir, exist_ok=True)
@@ -219,6 +220,7 @@ def run_repeated_experiment(
         policy_type = "llm"
         print(f"Backend : {backend.capitalize()}")
         print(f"Model   : {model_name}")
+        print(f"Reasoning Mode: {'ENABLED' if reasoning_mode else 'DISABLED'}")
         llm_agents = {
             name: LLMAgent(
                 agent_name=name,
@@ -228,6 +230,7 @@ def run_repeated_experiment(
                 temperature=temperature,
                 timeout=timeout,
                 num_predict=num_predict,
+                reasoning_mode=reasoning_mode,
                 backend=backend,
                 use_tool_recommendation=config.use_tool_recommendation,
             )

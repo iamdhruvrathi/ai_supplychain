@@ -40,11 +40,16 @@ class OllamaBackend(BaseLLMBackend):
         timeout: float = 120.0,
         num_predict: int = 8,
         keep_alive: str = "30m",
+        reasoning_mode: bool = False,
     ) -> None:
         self.model_name = model_name
         self.ollama_url = ollama_url.rstrip("/")
         self.timeout = float(timeout)
         self.num_predict = int(num_predict)
+        # Whether chain-of-thought (thinking) is enabled. When enabled,
+        # we allocate a larger token budget to avoid truncating intermediate
+        # reasoning traces which would invalidate experimental comparisons.
+        self.reasoning_mode = bool(reasoning_mode)
         self.keep_alive = keep_alive
 
     def generate(self, prompt: str, **options: Any) -> Optional[str]:
@@ -57,13 +62,42 @@ class OllamaBackend(BaseLLMBackend):
                 "keep_alive": self.keep_alive,
                 "options": {
                     "temperature": float(options.get("temperature", 0.2)),
+                    # Respect provided num_predict but enforce a sensible
+                    # minimum token budget depending on reasoning_mode.
+                    # If reasoning is enabled, require at least 512 tokens
+                    # to avoid truncating chain-of-thought outputs. If not,
+                    # require at least 64 tokens as a safe default.
                     "num_predict": int(options.get("num_predict", self.num_predict)),
                 },
             }
+            # Determine effective token budget and adjust payload.
+            specified = int(options.get("num_predict", self.num_predict))
+            min_budget = 512 if self.reasoning_mode else 64
+            final_num_predict = max(specified, min_budget)
+            payload["options"]["num_predict"] = final_num_predict
             response = requests.post(url, json=payload, timeout=self.timeout)
             response.raise_for_status()
             data = response.json()
-            return data.get("response", data.get("text", "")).strip()
+            text = data.get("response", data.get("text", "") ) or ""
+
+            # Log generation metadata for reproducibility and debugging.
+            resp_len_chars = len(text)
+            resp_len_words = len(text.split())
+            truncation_flag = None
+            # Ollama may include fields signalling truncation; log if present.
+            if isinstance(data, dict):
+                truncation_flag = data.get("truncated") or data.get("finish_reason") or data.get("stop_reason")
+
+            logger.info(
+                "Ollama generate model=%s num_predict=%d response_chars=%d response_words=%d truncation=%s",
+                self.model_name,
+                final_num_predict,
+                resp_len_chars,
+                resp_len_words,
+                repr(truncation_flag),
+            )
+
+            return text.strip()
         except requests.exceptions.ConnectionError:
             logger.error(
                 "Failed to connect to Ollama at %s. Ensure Ollama is running: ollama serve",
@@ -89,11 +123,13 @@ class GroqBackend(BaseLLMBackend):
         api_key: Optional[str] = None,
         timeout: float = 120.0,
         api_url: Optional[str] = None,  # ignored
+    reasoning_mode: bool = False,
     **kwargs,
     ) -> None:
         self.model_name = model_name
         self.api_key = api_key or os.environ.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
         self.timeout = float(timeout)
+        self.reasoning_mode = bool(reasoning_mode)
 
         if Groq is None:
             logger.warning(
@@ -126,6 +162,12 @@ class GroqBackend(BaseLLMBackend):
             except Exception:
                 pass
 
+        # Enforce a minimum token budget depending on whether reasoning is
+        # permitted; this prevents truncation of multi-step reasoning traces
+        # which would invalidate experiments comparing thinking vs non-thinking.
+        min_budget = 512 if self.reasoning_mode else 64
+        final_max_tokens = max(max_tokens, min_budget)
+
         try:
             # Use chat completions API as requested.
             # Add a system instruction to discourage chain-of-thought/reasoning traces.
@@ -138,12 +180,20 @@ class GroqBackend(BaseLLMBackend):
             }
             user_msg = {"role": "user", "content": prompt}
 
+            # Only include the explicit 'no chain-of-thought' system
+            # instruction when reasoning is disabled. When reasoning is
+            # enabled we avoid adding this instruction so models are free
+            # to provide intermediate reasoning traces.
+            messages = [user_msg]
+            if not self.reasoning_mode:
+                messages = [system_msg, user_msg]
+
             try:
                 resp = self._client.chat.completions.create(
                     model=self.model_name,
-                    messages=[system_msg, user_msg],
+                    messages=messages,
                     temperature=temperature,
-                    max_tokens=max_tokens,
+                    max_tokens=final_max_tokens,
                     timeout=self.timeout,
                 )
             except TypeError:
@@ -167,7 +217,20 @@ class GroqBackend(BaseLLMBackend):
                         text = str(content).strip()
                         return self._post_process(text)
                 if hasattr(msg, "content"):
-                    return self._post_process(str(msg.content).strip())
+                    out = self._post_process(str(msg.content).strip())
+                    # Logging metadata
+                    try:
+                        finish = getattr(first, "finish_reason", None)
+                    except Exception:
+                        finish = None
+                    logger.info(
+                        "Groq generate model=%s max_tokens=%d response_chars=%d finish_reason=%s",
+                        self.model_name,
+                        final_max_tokens,
+                        len(out),
+                        repr(finish),
+                    )
+                    return out
 
                 # fallback: choice.text or choice.delta
                 if hasattr(first, "text"):
@@ -185,12 +248,34 @@ class GroqBackend(BaseLLMBackend):
                         if isinstance(msg, dict):
                             content = msg.get("content") or msg.get("text")
                             if content:
-                                return self._post_process(str(content).strip())
+                                    out = self._post_process(str(content).strip())
+                                    logger.info(
+                                        "Groq generate model=%s max_tokens=%d response_chars=%d finish_reason=%s",
+                                        self.model_name,
+                                        final_max_tokens,
+                                        len(out),
+                                        repr(c0.get("finish_reason")),
+                                    )
+                                    return out
                         if "text" in c0:
-                            return self._post_process(str(c0.get("text")).strip())
+                                out = self._post_process(str(c0.get("text")).strip())
+                                logger.info(
+                                    "Groq generate model=%s max_tokens=%d response_chars=%d",
+                                    self.model_name,
+                                    final_max_tokens,
+                                    len(out),
+                                )
+                                return out
 
             # As a last resort, stringify the response and post-process
-            return self._post_process(str(resp).strip())
+            out = self._post_process(str(resp).strip())
+            logger.info(
+                "Groq generate model=%s max_tokens=%d response_chars=%d",
+                self.model_name,
+                final_max_tokens,
+                len(out),
+            )
+            return out
         except Exception as exc:
             logger.error("Groq SDK call failed: %s", exc)
             return None
@@ -227,23 +312,35 @@ class VLLMBackend(BaseLLMBackend):
     def __init__(
         self,
         model_name: str,
-        base_url: str = "http://localhost:8001/v1",
+        base_url: str = "http://localhost:8002/v1",
         timeout: float = 120.0,
         **kwargs,
     ):
         self.model_name = model_name
         self.timeout = timeout
 
+        # vLLM (OpenAI-compatible shim) client. We do not require a real
+        # API key for local vLLM instances; a placeholder is provided.
         self.client = OpenAI(
             api_key="EMPTY",
             base_url=base_url,
         )
+        # Whether to permit chain-of-thought reasoning traces.
+        self.reasoning_mode = bool(kwargs.get("reasoning_mode", False))
 
     def generate(self, prompt: str, **options):
         temperature = float(options.get("temperature", 0.2))
-        max_tokens = int(options.get("num_predict", 8))
+        # vLLM uses `max_tokens` but older code passed `num_predict`.
+        specified = int(options.get("num_predict", 8))
+        min_budget = 512 if self.reasoning_mode else 64
+        max_tokens = max(specified, min_budget)
 
         try:
+            # When reasoning is disabled, some backends accept a special
+            # prefix to discourage chain-of-thought. Preserve that behavior
+            # when `reasoning_mode` is False, otherwise send the prompt as-is.
+            user_content = ("/no_think\n" + prompt) if not self.reasoning_mode else prompt
+
             resp = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
@@ -253,14 +350,31 @@ class VLLMBackend(BaseLLMBackend):
                     },
                     {
                         "role": "user",
-                        "content": "/no_think\n" + prompt,
+                        "content": user_content,
                     },
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
 
-            return resp.choices[0].message.content.strip()
+            # Attempt to extract finish reason if present and log metadata.
+            try:
+                choice = resp.choices[0]
+                finish = getattr(choice, "finish_reason", None)
+                content = choice.message.content.strip() if hasattr(choice, "message") else str(choice).strip()
+            except Exception:
+                finish = None
+                content = str(resp)
+
+            logger.info(
+                "vLLM generate model=%s max_tokens=%d response_chars=%d finish_reason=%s",
+                self.model_name,
+                max_tokens,
+                len(content),
+                repr(finish),
+            )
+
+            return content
 
         except Exception as exc:
             logger.error("vLLM call failed: %s", exc)

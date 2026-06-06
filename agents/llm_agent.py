@@ -33,7 +33,8 @@ class LLMAgent:
         max_order: int = 10000,
         temperature: float = 0.2,
         timeout: float = 120.0,
-        num_predict: int = 8,
+        num_predict: int = 32,
+        reasoning_mode: bool = False,
         keep_alive: str = "30m",
         backend: str = "ollama",
         backend_kwargs: Optional[Dict[str, Any]] = None,
@@ -46,6 +47,11 @@ class LLMAgent:
         self.temperature = temperature
         self.timeout = timeout
         self.num_predict = int(num_predict)
+        # Whether the agent is allowed to use chain-of-thought / internal
+        # deliberation. When True, we allocate a larger token budget to
+        # permit multi-step reasoning traces. Default False keeps backwards
+        # compatible behaviour (disable reasoning traces).
+        self.reasoning_mode = bool(reasoning_mode)
         self.keep_alive = keep_alive
         self.backend_name = backend or "ollama"
         self.backend_kwargs = backend_kwargs or {}
@@ -60,6 +66,7 @@ class LLMAgent:
                 ollama_url=self.ollama_url,
                 timeout=self.timeout,
                 num_predict=self.num_predict,
+                reasoning_mode=self.reasoning_mode,
                 keep_alive=self.keep_alive,
             )
         elif self.backend_name.lower() == "groq":
@@ -68,15 +75,17 @@ class LLMAgent:
                 api_key=self.backend_kwargs.get("api_key"),
                 api_url=self.backend_kwargs.get("api_url"),
                 timeout=self.timeout,
+                reasoning_mode=self.reasoning_mode,
             )
         elif self.backend_name.lower() == "vllm":
             self.backend = VLLMBackend(
                 model_name=self.model_name,
                 base_url=self.backend_kwargs.get(
                     "base_url",
-                    "http://localhost:8001/v1",
+                    "http://localhost:8002/v1",
                 ),
                 timeout=self.timeout,
+                reasoning_mode=self.reasoning_mode,
             )
         else:
             raise ValueError(f"Unsupported backend: {self.backend_name}")
@@ -171,6 +180,7 @@ class LLMAgent:
                 temperature=self.temperature,
                 num_predict=self.num_predict,
                 keep_alive=self.keep_alive,
+                reasoning_mode=self.reasoning_mode,
             )
         except Exception as exc:  # pragma: no cover - defensive
             logger.error("LLM backend '%s' generation failed: %s", self.backend_name, exc)
@@ -206,7 +216,28 @@ class LLMAgent:
         if not text:
             return default
 
+        # Record raw response (truncated) for metadata and analysis.
+        raw = (str(response_text)[:500]) if response_text is not None else ""
+        # Ensure counters exist for this agent instance. These counters allow
+        # experiment harnesses to compute percentages of parse methods used.
+        if not hasattr(self, "parse_method_counters"):
+            self.parse_method_counters = Counter()
+
         try:
+            # First, attempt to parse JSON-style structured outputs commonly
+            # requested from models when structured output is enabled.
+            import json
+
+            try:
+                j = json.loads(response_text)
+                if isinstance(j, dict) and "order" in j:
+                    val = int(j["order"])
+                    self.parse_method_counters.update(["json"])
+                    self._last_parse_info = {"parse_method_used": "json", "raw_response": raw}
+                    return self._clamp_order(val)
+            except Exception:
+                # Not JSON or doesn't contain order; continue with existing rules
+                pass
             explicit_patterns = [
                 r"(?:final\s+)?order\s*(?:quantity|amount)?\s*[:=]\s*(\d+)",
                 r"(?:will\s+)?order\s+(\d+)\s*(?:units?)?",
@@ -216,21 +247,40 @@ class LLMAgent:
             for pattern in explicit_patterns:
                 matches = re.findall(pattern, text, flags=re.IGNORECASE)
                 if matches:
+                    self.parse_method_counters.update(["explicit_pattern"])
+                    self._last_parse_info = {"parse_method_used": "explicit_pattern", "raw_response": raw}
                     return self._clamp_order(int(matches[-1]))
 
             standalone = re.findall(r"\b(\d+)\b", text)
             if standalone:
+                # This is a fallback commonly triggered when the model outputs
+                # reasoning text followed by a final number. We log this case
+                # because it indicates the model produced extra tokens that
+                # were not pure final-answer-only outputs.
                 last = standalone[-1]
                 idx = text.rfind(last)
                 prefix = text[max(0, idx - 3):idx]
                 if "-" in prefix:
+                    self.parse_method_counters.update(["standalone_integer"])
+                    self._last_parse_info = {"parse_method_used": "standalone_integer", "raw_response": raw}
+                    logger.warning(
+                        "Parser falling back to standalone integer extraction for agent %s; raw_response begins: %s",
+                        self.agent_name,
+                        raw[:200],
+                    )
                     return self._clamp_order(0)
+                self.parse_method_counters.update(["standalone_integer"])
+                self._last_parse_info = {"parse_method_used": "standalone_integer", "raw_response": raw}
                 return self._clamp_order(int(last))
 
             signed = re.search(r"-?\d+", text)
             if signed:
+                self.parse_method_counters.update(["signed_integer"])
+                self._last_parse_info = {"parse_method_used": "signed_integer", "raw_response": raw}
                 return self._clamp_order(int(signed.group()))
 
+            self.parse_method_counters.update(["fallback_default"])
+            self._last_parse_info = {"parse_method_used": "fallback_default", "raw_response": raw}
             logger.warning("No integer found in LLM response: %s", text[:200])
             return default
         except (TypeError, ValueError) as exc:
@@ -259,14 +309,20 @@ class LLMAgent:
         parsed = self.parse_order(response, default=fallback)
         order = self._clamp_order(parsed)
         tool_order = prompt_state.get("tool_order")
+        # Attach richer metadata for analysis and reproducibility.
+        parse_info = getattr(self, "_last_parse_info", {}) or {}
+        raw_response = parse_info.get("raw_response") if parse_info else (str(response)[:500] if response else None)
+        parse_method = parse_info.get("parse_method_used") if parse_info else None
+        diff = (
+            abs(int(order) - int(tool_order)) if tool_order is not None else None
+        )
         self.last_decision_metadata = {
             "tool_order": int(tool_order) if tool_order is not None else None,
             "llm_order": int(order),
-            "difference": (
-                abs(int(order) - int(tool_order))
-                if tool_order is not None
-                else None
-            ),
+            "difference": diff,
+            "tool_followed": diff,
+            "parse_method_used": parse_method,
+            "raw_response": raw_response,
         }
         return order
 
@@ -296,13 +352,23 @@ class LLMAgent:
             order = self._clamp_order(min(winners))
 
         tool_order = prompt_state.get("tool_order")
+        # Record parse method & raw response if available from last parse.
+        parse_info = getattr(self, "_last_parse_info", {}) or {}
+        raw_response = parse_info.get("raw_response") if parse_info else None
+        parse_method = parse_info.get("parse_method_used") if parse_info else None
+
         self.last_decision_metadata = {
             "tool_order": int(tool_order) if tool_order is not None else None,
             "llm_order": int(order),
             "difference": (
-                abs(int(order) - int(tool_order))
-                if tool_order is not None
-                else None
+                abs(int(order) - int(tool_order)) if tool_order is not None else None
             ),
+            "tool_followed": (
+                abs(int(order) - int(tool_order)) if tool_order is not None else None
+            ),
+            "parse_method_used": parse_method,
+            "raw_response": raw_response,
+            "sample_values": parsed_values,
+            "sample_count": len(parsed_values),
         }
         return order

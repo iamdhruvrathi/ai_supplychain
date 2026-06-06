@@ -1,3 +1,25 @@
+# Experimental Setup
+
+All experiments were conducted using a four-echelon Beer Game supply chain consisting of a Retailer, Wholesaler, Distributor, and Factory controlled by LLM-based agents.
+
+**Model:** Qwen3-4B
+**Inference Backend:** vLLM
+**Runs per Experiment:** 30 independent runs
+**Simulation Horizon:** 20 weeks per run
+**Demand Pattern:** Fixed Beer Game demand sequence
+**Maximum Order Quantity:** 100 units
+**Inference Mode:** /no_think
+**Evaluation Metrics:** Mean Cost, Coefficient of Variation (CV), Cross-Echelon Amplification (Ψ), Temporal Amplification (Φ), and Consensus Gap.
+
+Four experimental conditions were evaluated:
+
+1. **Baseline** – Decentralized LLM agents without tools or negotiation.
+2. **Tool Only** – LLM agents assisted by an inventory recommendation tool.
+3. **Negotiation Only** – LLM agents allowed to negotiate before finalizing orders.
+4. **Tool + Negotiation** – LLM agents using both inventory recommendations and negotiation.
+
+---
+
 # Experimental Results Summary
 
 ## Table 1: Comparison of Experimental Conditions
@@ -11,7 +33,7 @@
 
 ---
 
-## Observations
+# Observations
 
 ### Baseline
 
@@ -31,7 +53,7 @@ The combination of tools and negotiation improved cost relative to the baseline 
 
 ---
 
-## Key Findings
+# Key Findings
 
 1. Negotiation achieved the best operational performance, producing the lowest average supply-chain cost.
 
@@ -45,6 +67,6 @@ The combination of tools and negotiation improved cost relative to the baseline 
 
 ---
 
-## Conclusion
+# Conclusion
 
 The experimental results demonstrate that coordination and decision-support mechanisms influence different aspects of supply-chain behavior. Negotiation is highly effective at reducing costs and improving coordination, whereas tool support primarily improves reliability. Combining both approaches provides a balanced improvement over the baseline, suggesting that hybrid strategies can help mitigate Agent Bullwhip while maintaining stable decision-making.

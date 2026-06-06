@@ -1,0 +1,228 @@
+{
+  "n_runs": 2,
+  "requested_runs": 2,
+  "status": "complete",
+  "config": {
+    "max_weeks": 10,
+    "demand_seed": null,
+    "fixed_demand_path": [
+      4,
+      4,
+      4,
+      4,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+    ],
+    "orchestrator_mode": "decentralized",
+    "use_tool_recommendation": false,
+    "constraints_enabled": false,
+    "model_name": "Qwen/Qwen3-4B"
+  },
+  "cost": {
+    "mean": 3429.0,
+    "std": 243.0,
+    "min": 3186.0,
+    "max": 3672.0,
+    "median": 3429.0,
+    "ci_lower": 3092.219182256471,
+    "ci_upper": 3765.780817743529,
+    "n": 2
+  },
+  "reliability": {
+    "n_runs": 2,
+    "mean_cost": 3429.0,
+    "std_cost": 243.0,
+    "coefficient_of_variation": 0.07086614173228346,
+    "run_to_run_instability": 59049.0,
+    "tail_event_rate_p90": 0.5,
+    "max_cost": 3672.0,
+    "min_cost": 3186.0,
+    "order_spike_count": {
+      "Retailer": 0,
+      "Wholesaler": 0,
+      "Distributor": 4,
+      "Factory": 0
+    },
+    "inventory_collapse_events": {
+      "Retailer": 0,
+      "Wholesaler": 2,
+      "Distributor": 2,
+      "Factory": 2
+    },
+    "backlog_explosion_events": {
+      "Retailer": 0,
+      "Wholesaler": 12,
+      "Distributor": 10,
+      "Factory": 6
+    }
+  },
+  "agent_bullwhip": {
+    "sigma_squared": {
+      "Retailer": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        16.0,
+        16.0,
+        16.0,
+        16.0,
+        0.0,
+        0.0
+      ],
+      "Wholesaler": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        36.0,
+        49.0,
+        0.0,
+        0.0
+      ],
+      "Distributor": [
+        0.0,
+        0.0,
+        0.0,
+        156.25,
+        169.0,
+        6.25,
+        0.0,
+        36.0,
+        49.0,
+        0.0
+      ],
+      "Factory": [
+        0.0,
+        0.0,
+        0.0,
+        400.0,
+        25.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        49.0
+      ]
+    },
+    "psi": {
+      "Wholesaler": [
+        null,
+        null,
+        null,
+        null,
+        0.0,
+        0.0,
+        2.25,
+        3.0625,
+        null,
+        null
+      ],
+      "Distributor": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.0,
+        0.7346938775510204,
+        null,
+        null
+      ],
+      "Factory": [
+        null,
+        null,
+        null,
+        2.56,
+        0.14792899408284024,
+        0.0,
+        null,
+        0.0,
+        0.0,
+        null
+      ]
+    },
+    "phi": {
+      "Retailer": [
+        null,
+        null,
+        null,
+        null,
+        1.0,
+        1.0,
+        1.0,
+        0.0,
+        null,
+        null
+      ],
+      "Wholesaler": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        1.3611111111111112,
+        0.0,
+        null,
+        null
+      ],
+      "Distributor": [
+        null,
+        null,
+        null,
+        1.0816,
+        0.03698224852071006,
+        0.0,
+        null,
+        1.3611111111111112,
+        0.0,
+        null
+      ],
+      "Factory": [
+        null,
+        null,
+        null,
+        0.0625,
+        0.0,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    "psi_mean_by_echelon": {
+      "Wholesaler": 1.328125,
+      "Distributor": 0.3673469387755102,
+      "Factory": 0.5415857988165681
+    },
+    "phi_mean_by_echelon": {
+      "Retailer": 0.75,
+      "Wholesaler": 0.6805555555555556,
+      "Distributor": 0.49593867192636426,
+      "Factory": 0.03125
+    },
+    "summary": {
+      "echelons_with_psi_gt_1": 1,
+      "echelons_with_phi_gt_1": 0
+    }
+  },
+  "consensus": {
+    "mean_consensus_gap": 27.75,
+    "max_consensus_gap": 54.0
+  },
+  "mean_consensus_gap": 27.75,
+  "max_consensus_gap": 54.0,
+  "total_costs": [
+    3186.0,
+    3672.0
+  ]
+}
