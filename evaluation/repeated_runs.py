@@ -67,8 +67,13 @@ def _llm_order(
 
 
 def _metadata_from_agent(agent: LLMAgent) -> Dict[str, Any]:
-    return dict(getattr(agent, "last_decision_metadata", {}) or {})
-
+    metadata = dict(getattr(agent, "last_decision_metadata", {}) or {})
+    metadata["forecast_summary"] = getattr(
+        agent,
+        "last_forecast_summary",
+        None,
+    )
+    return metadata
 
 def _build_env(config: SimulationConfig) -> BeerGame:
     return BeerGame(
@@ -379,6 +384,16 @@ if __name__ == "__main__":
     parser.add_argument("--demand-pattern", choices=("mit", "seeded", "random"), default="mit")
     parser.add_argument("--n-samples", type=int, default=1)
     parser.add_argument(
+        "--reasoning-mode",
+        action="store_true",
+        help="Enable reasoning mode for supported models",
+    )
+    parser.add_argument(
+        "--use-forecast-summary",
+        action="store_true",
+        help="Inject forecast summaries into prompts",
+    )
+    parser.add_argument(
         "--orchestrator-mode",
         choices=tuple(mode.value for mode in OrchestratorMode),
         default=None,
@@ -435,5 +450,7 @@ if __name__ == "__main__":
         num_predict=args.num_predict,
         progress=args.progress,
         n_samples=max(1, args.n_samples),
+        reasoning_mode=args.reasoning_mode,
+        use_forecast_summary=args.use_forecast_summary,
     )
     print(f"Mean cost: {report['cost']['mean']:.2f}, CV: {report['reliability'].get('coefficient_of_variation')}")

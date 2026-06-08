@@ -29,6 +29,14 @@ def confidence_interval(
     return (mean - z * se, mean + z * se)
 
 
+def interquartile_range(values: List[float]) -> Optional[float]:
+    """IQR = Q3 - Q1."""
+    if not values:
+        return None
+    q1, q3 = np.percentile(values, [25, 75])
+    return float(q3 - q1)
+
+
 def cost_summary(values: List[float]) -> Dict[str, Optional[float]]:
     mean, std = mean_std(values)
     ci = confidence_interval(values)
@@ -38,6 +46,7 @@ def cost_summary(values: List[float]) -> Dict[str, Optional[float]]:
         "min": min(values) if values else None,
         "max": max(values) if values else None,
         "median": float(np.median(values)) if values else None,
+        "iqr": interquartile_range(values),
         "ci_lower": ci[0] if ci else None,
         "ci_upper": ci[1] if ci else None,
         "n": len(values),

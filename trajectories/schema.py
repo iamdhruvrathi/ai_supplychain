@@ -48,6 +48,7 @@ def standardize_trajectory(
                     "cost": record.get("cost"),
                     "bullwhip": record.get("bullwhip"),
                     "negotiation_proposals": record.get("negotiation_proposals"),
+                    "forecast_summary": record.get("forecast_summary"),
                 },
                 policy_type=policy_type,
                 model_name=model_name,

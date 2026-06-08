@@ -419,6 +419,7 @@ class BeerGame:
                 "tool_order": metadata.get("tool_order"),
                 "llm_order": metadata.get("llm_order"),
                 "difference": metadata.get("difference"),
+                "forecast_summary": metadata.get("forecast_summary"),
                 "negotiation_proposals": metadata.get("negotiation_proposals"),
                 "consensus_gap": self.history["consensus_gap"][-1],
                 "reward": float(reward),

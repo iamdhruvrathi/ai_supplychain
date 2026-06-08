@@ -65,5 +65,5 @@ def run_experiment(repeats: int = 30, max_weeks: int = 50, out_csv: str = "resul
 
 
 if __name__ == "__main__":
-    df = run_experiment(repeats=10, max_weeks=30)
+    df = run_experiment(repeats=30, max_weeks=20)
     print(df.groupby('policy')[['total_cost','bullwhip_overall']].agg(['mean','std']))

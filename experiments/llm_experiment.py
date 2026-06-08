@@ -58,6 +58,10 @@ def run_llm_experiment(
     max_order: int = 10000,
     results_file: str = "results/llm_experiment_results.csv",
     use_tool_recommendation: bool = False,
+    backend: str = "ollama",
+    timeout: float = 120.0,
+    num_predict: int = 32,
+    reasoning_mode: bool = False,
 ) -> pd.DataFrame:
     """Run a complete LLM-driven Beer Game experiment."""
     logger.info("Starting LLM experiment with model: %s", model_name)
@@ -66,7 +70,7 @@ def run_llm_experiment(
     env = BeerGame(max_weeks=max_weeks, verbose=False)
     env.reset()
 
-    print(f"Backend : Ollama")
+    print(f"Backend : {backend.capitalize()}")
     print(f"Model   : {model_name}")
 
     agents = {
@@ -76,6 +80,10 @@ def run_llm_experiment(
             ollama_url=ollama_url,
             max_order=max_order,
             temperature=0.2,
+            timeout=timeout,
+            num_predict=num_predict,
+            reasoning_mode=reasoning_mode,
+            backend=backend,
             use_tool_recommendation=use_tool_recommendation,
         )
         for name in ECHELONS
@@ -218,9 +226,17 @@ if __name__ == "__main__":
         "--backend",
         choices=("ollama", "groq", "vllm"),
         default="ollama",
-        help="Inference backend to use (ollama or groq)",
+        help="Inference backend to use: ollama, groq, or vllm",
     )
+    parser.add_argument("--timeout", type=float, default=120.0)
+    parser.add_argument("--num-predict", type=int, default=32)
+    parser.add_argument("--reasoning-mode", action="store_true")
     parser.add_argument("--use-tool-recommendation", action="store_true")
+    parser.add_argument(
+    "--use-forecast-summary",
+        action="store_true",
+        help="Inject forecast summaries into prompts",
+    )
     args = parser.parse_args()
     try:
         run_llm_experiment(
@@ -230,6 +246,11 @@ if __name__ == "__main__":
             max_order=args.max_order,
             results_file=args.output,
             use_tool_recommendation=args.use_tool_recommendation,
+            backend=args.backend,
+            timeout=args.timeout,
+            num_predict=args.num_predict,
+            reasoning_mode=args.reasoning_mode,
+            use_forecast_summary=args.use_forecast_summary,
         )
         logger.info("Experiment completed successfully.")
     except Exception as exc:

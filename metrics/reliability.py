@@ -75,6 +75,66 @@ def tail_event_rate(
     return float(sum(1 for v in values if v >= cutoff) / len(values))
 
 
+def run_failure_flags(
+    total_costs: List[float],
+    orders_by_echelon: Optional[Dict[str, List[List[int]]]] = None,
+    inventories_by_echelon: Optional[Dict[str, List[List[int]]]] = None,
+    backlogs_by_echelon: Optional[Dict[str, List[List[int]]]] = None,
+    tail_percentile: float = 90.0,
+) -> List[bool]:
+    """Per-run failure flags using existing tail and event detectors."""
+    n = len(total_costs)
+    flags = [False] * n
+    if not n:
+        return flags
+
+    if n >= 2:
+        cutoff = float(np.percentile(total_costs, tail_percentile))
+        for i, cost in enumerate(total_costs):
+            if cost >= cutoff:
+                flags[i] = True
+
+    if orders_by_echelon:
+        for runs_orders in orders_by_echelon.values():
+            for i, orders in enumerate(runs_orders):
+                if i < n and detect_order_spikes(orders):
+                    flags[i] = True
+
+    if inventories_by_echelon:
+        for runs_inv in inventories_by_echelon.values():
+            for i, inventory in enumerate(runs_inv):
+                if i < n and detect_inventory_collapse(inventory):
+                    flags[i] = True
+
+    if backlogs_by_echelon:
+        for runs_bl in backlogs_by_echelon.values():
+            for i, backlog in enumerate(runs_bl):
+                if i < n and detect_backlog_explosion(backlog):
+                    flags[i] = True
+
+    return flags
+
+
+def failure_rate(
+    total_costs: List[float],
+    orders_by_echelon: Optional[Dict[str, List[List[int]]]] = None,
+    inventories_by_echelon: Optional[Dict[str, List[List[int]]]] = None,
+    backlogs_by_echelon: Optional[Dict[str, List[List[int]]]] = None,
+    tail_percentile: float = 90.0,
+) -> float:
+    """Fraction of runs flagged by tail cost or reliability event detectors."""
+    flags = run_failure_flags(
+        total_costs,
+        orders_by_echelon=orders_by_echelon,
+        inventories_by_echelon=inventories_by_echelon,
+        backlogs_by_echelon=backlogs_by_echelon,
+        tail_percentile=tail_percentile,
+    )
+    if not flags:
+        return 0.0
+    return float(sum(flags) / len(flags))
+
+
 def reliability_summary(
     total_costs: List[float],
     orders_by_echelon: Optional[Dict[str, List[List[int]]]] = None,
@@ -86,9 +146,21 @@ def reliability_summary(
         "n_runs": len(total_costs),
         "mean_cost": float(statistics.mean(total_costs)) if total_costs else 0.0,
         "std_cost": float(statistics.pstdev(total_costs)) if len(total_costs) > 1 else 0.0,
+        "median_cost": float(np.median(total_costs)) if total_costs else 0.0,
+        "iqr_cost": (
+            float(np.percentile(total_costs, 75) - np.percentile(total_costs, 25))
+            if total_costs
+            else 0.0
+        ),
         "coefficient_of_variation": coefficient_of_variation(total_costs),
         "run_to_run_instability": run_to_run_instability(total_costs),
         "tail_event_rate_p90": tail_event_rate(total_costs, 90.0),
+        "failure_rate": failure_rate(
+            total_costs,
+            orders_by_echelon=orders_by_echelon,
+            inventories_by_echelon=inventories_by_echelon,
+            backlogs_by_echelon=backlogs_by_echelon,
+        ),
         "max_cost": max(total_costs) if total_costs else 0.0,
         "min_cost": min(total_costs) if total_costs else 0.0,
     }

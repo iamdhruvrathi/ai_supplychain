@@ -1,0 +1,28 @@
+experiments:
+
+  figure3_n10:
+    status: complete
+
+  figure3_n100:
+    status: complete
+
+  exp1_baseline:
+    status: complete
+
+  exp2_tool:
+    status: complete
+
+  exp3_majority_vote:
+    status: complete
+
+  exp4_negotiation:
+    status: complete
+
+  orch_demand_sharing_r30:
+    status: pending
+
+  orch_history_sharing_r30:
+    status: pending
+
+  orch_centralized_r30:
+    status: pending

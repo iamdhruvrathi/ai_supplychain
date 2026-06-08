@@ -234,3 +234,24 @@ Exact numeric match to paper figures is **not required** until human baselines a
 | `experiments/run_majority_vote.py` | Majority-vote experiment runner |
 | `experiments/smoke_test.py` | Minimal simulator smoke test (not `run_smoke_tests.py`) |
 | `experiments/llm_experiment.py` | Single-run LLM experiment with plots |
+
+
+Baseline anomaly:
+Random policy achieves lower cost than Base Stock under
+holding_cost=1 and backlog_cost=2.
+
+Likely due to weak backlog penalty.
+Requires cost-sensitivity study.
+Not blocking Phase-0 experiments.
+
+06-Jun-2026
+
+- Completed repository cleanup phase.
+- Added reliability metrics (median, IQR, failure_rate).
+- Added Ψ/Φ validation tests.
+- Added parser robustness tests.
+- Began Figure 3 n=100 majority-vote experiment.
+- Investigated baseline policies.
+- Observed random policy outperforming base-stock under holding_cost=1, backlog_cost=2.
+- Hypothesis: weak backlog penalty encourages under-ordering.
+- Deferred cost-sensitivity study.

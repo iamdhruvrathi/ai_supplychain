@@ -31,7 +31,7 @@ The main objective is to isolate the impact of LLM decision stochasticity on out
 The system is composed of four primary subsystems:
 
 - Simulation Engine (simulator/): physical supply-chain dynamics and environment state.
-- Agent Layer (gents/): LLM agent wrapper and backend interfaces.
+- Agent Layer (agents/): LLM agent wrapper and backend interfaces.
 - Evaluation Layer (evaluation/, experiments/): experiment execution, plotting, and report generation.
 - Metrics Layer (metrics/): bullwhip, stability, cost, and reliability analysis.
 
@@ -39,22 +39,23 @@ Agents can be controlled by classical policies or by LLMs via Ollama, Groq, or v
 
 ### Main subsystems
 
-- simulator/ — implements the Beer Game mechanics, state APIs, orchestrator information sharing, and reward shaping.
-- gents/ — encapsulates the LLM prompt generation and response parsing lifecycle, plus backend abstraction for inference providers.
-- 	ools/ — supplies optional decision support recommendations injected into LLM prompts.
-- policies/ — provides classical order policies used as baselines.
-- evaluation/ — orchestrates repeated-run experiments, model comparisons, plot generation, and benchmark execution.
-- 	rajectories/ — standardizes and exports per-step rollout data.
-- configs/ — holds YAML experiment definitions and loader logic.
+ - simulator/ — implements the Beer Game mechanics, state APIs, orchestrator information sharing, and reward shaping.
+ - agents/ — encapsulates the LLM prompt generation and response parsing lifecycle, plus backend abstraction for inference providers.
+ - tools/ — supplies optional decision support recommendations injected into LLM prompts (inventory and forecasting helpers).
+ - policies/ — provides classical order policies used as baselines.
+ - evaluation/ — orchestrates repeated-run experiments, model comparisons, plot generation, and benchmark execution.
+ - trajectories/ — standardizes and exports per-step rollout data.
+ - configs/ — holds YAML experiment definitions and loader logic.
 
 ### Responsibilities of each subsystem
 
 - simulator/: enforces supply-chain rules, computes costs and bullwhip, retains history and trajectories.
-- gents/: translates local or shared state into model prompts and returns safe order quantities.
-- evaluation/: runs experiments, computes aggregate metrics, and persists output artifacts.
-- metrics/: defines the quantitative measures used to evaluate bullwhip, stability, and reliability.
-- 	ools/: adds optional decision support guidance for the agent prompt.
-- 	rajectories/: harmonizes rollout records into JSONL/CSV/Parquet outputs.
+ - simulator/: enforces supply-chain rules, computes costs and bullwhip, retains history and trajectories.
+ - agents/: translates local or shared state into model prompts and returns safe order quantities.
+ - evaluation/: runs experiments, computes aggregate metrics, and persists output artifacts.
+ - metrics/: defines the quantitative measures used to evaluate bullwhip, stability, and reliability.
+ - tools/: adds optional decision support guidance for the agent prompt.
+ - trajectories/: harmonizes rollout records into JSONL/CSV/Parquet outputs.
 
 ---
 
@@ -65,13 +66,13 @@ Agents can be controlled by classical policies or by LLMs via Ollama, Groq, or v
 - ARCHITECTURE.md — this document.
 - README.md — usage instructions and experiment workflow.
 - main.py — a convenience CLI wrapper for common experiments.
-- 
-equirements.txt — Python dependency list.
+- requirements.txt — Python dependency list.
 
 ### configs/
 
 - default_experiment.yaml — default researcher experiment settings.
 - loader.py — loads YAML into SimulationConfig and related dataclasses.
+ - forecast_echelon_map.yaml — per-echelon forecasting model assignment used by tools/forecast_tool.py.
 
 ### simulator/
 
@@ -79,25 +80,25 @@ equirements.txt — Python dependency list.
 - demand.py — generates demand from fixed paths, seeds, or random distributions.
 - ode.py — implements SupplyChainNode, inventory, backlog, pipeline, and cost accounting.
 - orchestrator.py — augments agent observations based on information-sharing regime.
-- eer_game.py — core environment, weekly step logic, history tracking, bullwhip, and reward shaping.
-- 
-ewards.py — shaped reward function combining cost, backlog, and bullwhip penalties.
+- beer_game.py — core environment, weekly step logic, history tracking, bullwhip, and reward shaping.
+- rewards.py — shaped reward function combining cost, backlog, and bullwhip penalties.
 
-### gents/
+### agents/
 
-- llm_agent.py — LLMAgent prompt creation, backend invocation, and order parsing.
+- llm_agent.py — LLMAgent prompt creation, backend invocation, and order parsing. Supports optional forecast summary injection into prompts and records the last forecast summary.
 - llm_backends.py — backend abstraction layer for Ollama, Groq, and vLLM.
 - constraints.py — optional run-time guardrails for orders.
 
-### 	ools/
+### tools/
 
 - inventory_tool.py — deterministic EOQ-like recommendation used to augment prompts.
+- forecast_tool.py — echelon-aware forecasting wrapper used to create ForecastSummary objects for prompts and logging.
 
 ### policies/
 
-- ase_stock.py — simple base-stock policy for classical experiments.
+- base_stock.py — simple base-stock policy for classical experiments.
 - moving_average.py — moving average demand-based ordering policy.
-- andom_policy.py — random order policy for baseline variability.
+- random_policy.py — random order policy for baseline variability.
 
 ### evaluation/
 
@@ -111,9 +112,9 @@ ewards.py — shaped reward function combining cost, backlog, and bullwhip penal
 
 - llm_experiment.py — single-run LLM experiment with CSV export and plots.
 - baseline_experiment.py — classical policy baseline experiments.
-- un_majority_vote.py — majority-vote LLM experiment orchestration.
-- un_figure2.py / un_figure3.py — wrappers to generate research figure plots.
-- smoke_test.py / 	est_llm_agent.py / 	est_state_api.py — validation and integration checks.
+- run_majority_vote.py — majority-vote LLM experiment orchestration.
+- run_figure2.py / run_figure3.py — wrappers to generate research figure plots.
+- smoke_test.py / test_llm_agent.py / test_state_api.py — validation and integration checks.
 
 ### trajectories/
 
@@ -138,6 +139,7 @@ LLMAgent is the system-level wrapper for LLM-driven decision making.
 - It constructs a prompt from local state and optional shared information.
 - It delegates inference to agents.llm_backends.
 - It parses the response to extract a safe integer order.
+- It can optionally inject a structured Forecast Summary into prompts (via SimulationConfig/use_forecast_summary) and records the last forecast summary for logging.
 - It returns metadata such as tool_order, llm_order, and difference.
 
 ### Backend abstraction layer
@@ -221,7 +223,7 @@ It ensures final output is within [0, max_order].
 
 The tool subsystem is intentionally small and transparent.
 
-	tools/inventory_tool.py exports a single function:
+  tools/inventory_tool.py and tools/forecast_tool.py export helper functions:
 
 - eoq_recommendation(state) — deterministic base-stock order recommendation.
 
@@ -235,10 +237,8 @@ lead_time = int(state.get('lead_time', 2) or 2)
 inventory = int(state.get('inventory', 0) or 0)
 backlog = int(state.get('backlog', 0) or 0)
 return max(0, target - inventory + backlog)
-`
-
-It is designed as audit-friendly support rather than a black-box optimization.
-
+results/.../trajectories/rollouts.csv
+results/.../trajectories/rollouts.parquet (optional)
 ### use_tool_recommendation flow
 
 When enabled in SimulationConfig.use_tool_recommendation:
@@ -257,6 +257,11 @@ The prompt includes the explicit recommendation text:
 - You may follow or ignore this recommendation.
 
 This creates a structured decision-support signal for the LLM.
+
+### Forecast integration
+
+- tools/forecast_tool.py produces a `ForecastSummary` for a given echelon and recent demand history.
+- When enabled, LLMAgent.build_prompt() appends a Forecast Summary block to the prompt; the agent records `last_forecast_summary` for logging and trajectory metadata.
 
 ### Differences between Tool ON and Tool OFF experiments
 
@@ -291,7 +296,7 @@ Each SupplyChainNode tracks:
 - FIFO incoming_shipments
 - last_order
 - order_history
-- accumulated 	otal_holding_cost, 	otal_backlog_cost, 	otal_cost
+- accumulated total_holding_cost, total_backlog_cost, total_cost
 
 BeerGame maintains system-wide history arrays for demand, orders, inventory, backlog, cost, bullwhip, and consensus gaps.
 
@@ -427,7 +432,7 @@ The environment loop is tightly ordered and deterministic given the same inputs:
 
 ### Tool experiments
 
-- Controlled via SimulationConfig.use_tool_recommendation
+- Controlled via SimulationConfig.use_tool_recommendation (tool recommendations) and SimulationConfig.use_forecast_summary (forecast summaries injected into prompts).
 - Runs may compare tool-assisted prompt context against raw LLM decisions
 
 ---
@@ -443,7 +448,7 @@ The environment loop is tightly ordered and deterministic given the same inputs:
 ### Cost metrics
 
 - metrics.cost_analysis.cost_summary() computes mean, std, median, min/max, and confidence intervals.
-- evaluation/repeated_runs.py stores 	otal_costs and per-run summaries in CSV.
+ - evaluation/repeated_runs.py stores total_costs and per-run summaries in CSV.
 
 ### Ψ (Psi) metrics
 
@@ -466,7 +471,7 @@ The environment loop is tightly ordered and deterministic given the same inputs:
 
 - metrics.reliability.coefficient_of_variation() measures cost variability.
 - run_to_run_instability measures total-cost variance across runs.
-- 	ail_event_rate() counts extreme-cost runs above the 90th percentile.
+ - tail_event_rate() counts extreme-cost runs above the 90th percentile.
 - Inventory collapse and backlog explosion detectors identify risk events.
 
 ### Stability metrics
@@ -580,6 +585,7 @@ sequenceDiagram
   - cost statistics
   - reliability measures
   - agent bullwhip metrics
+  - forecast summaries (per-echelon/agent) and forecast metadata
   - consensus statistics
 
 ### CSV outputs
@@ -600,12 +606,9 @@ sequenceDiagram
 
 ### Trajectory logs
 
-- 
-esults/.../trajectories/rollouts.jsonl
-- 
-esults/.../trajectories/rollouts.csv
-- 
-esults/.../trajectories/rollouts.parquet (optional)
+- results/.../trajectories/rollouts.jsonl
+- results/.../trajectories/rollouts.csv
+- results/.../trajectories/rollouts.parquet (optional)
 
 Trajectory records include:
 
@@ -618,6 +621,7 @@ Trajectory records include:
 - tool_order
 - llm_order
 - difference
+- forecast_summary
 - consensus_gap
 - negotiation_proposals
 - cost

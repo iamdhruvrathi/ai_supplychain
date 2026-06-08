@@ -39,6 +39,7 @@ class LLMAgent:
         backend: str = "ollama",
         backend_kwargs: Optional[Dict[str, Any]] = None,
         use_tool_recommendation: bool = False,
+        use_forecast_summary: bool = False,
     ) -> None:
         self.agent_name = agent_name
         self.model_name = model_name
@@ -56,7 +57,9 @@ class LLMAgent:
         self.backend_name = backend or "ollama"
         self.backend_kwargs = backend_kwargs or {}
         self.use_tool_recommendation = bool(use_tool_recommendation)
+        self.use_forecast_summary = bool(use_forecast_summary)
         self.last_decision_metadata: Dict[str, Any] = {}
+        self.last_forecast_summary: Optional[Dict[str, Any]] = None
 
         # Initialize the chosen backend. Keep Ollama behaviour unchanged by
         # default; Groq backend implemented in `agents.llm_backends`.
@@ -161,7 +164,12 @@ class LLMAgent:
             f"Current week: {state.get('current_week', 0)}\n"
         )
         extra = self._orchestrator_context(state)
-        prompt = prompt + extra + self._tool_context(state)
+        prompt = (
+            prompt
+            + extra
+            + self._tool_context(state)
+            + self._forecast_context(state)
+        )
         prompt = prompt + self._negotiation_context(state) + (
             "\nDecide how many units to order this week.\n\n"
             "Rules:\n"
@@ -171,6 +179,36 @@ class LLMAgent:
             f"* Order must be between 0 and {self.max_order}.\n"
         )
         return prompt
+
+    def _forecast_context(self, state):
+        if not self.use_forecast_summary:
+            return ""
+
+        try:
+            from tools.forecast_tool import get_forecast
+
+            history = state.get("demand_history", [])
+
+            if not history:
+                return ""
+
+            summary = get_forecast(self.agent_name, history)
+
+            return (
+                "\nForecast Summary:\n"
+                f"Model: {summary.forecast_model}\n"
+                f"Forecast next period: {summary.demand_next_period:.2f}\n"
+                f"Trend: {summary.trend}\n"
+                f"Demand uncertainty: {summary.demand_uncertainty}\n"
+                f"Seasonality detected: {summary.seasonality_detected}\n"
+                #f"Recent mean: {summary.recent_mean:.2f}\n"
+                #f"Recent std: {summary.recent_std:.2f}\n"
+            )
+
+        except Exception as e:
+            print(f"[Forecast Error] {e}")
+            return ""
+
 
     def query_model(self, prompt: str) -> Optional[str]:
         """Delegate generation to the configured backend implementation."""
@@ -305,6 +343,7 @@ class LLMAgent:
         """Build prompt, query Ollama, and return a safe order quantity."""
         prompt_state = self._with_tool_recommendation(state)
         prompt = self.build_prompt(prompt_state)
+        print(f"\n[Prompt]\n{prompt}\n")
         response = self.query_model(prompt)
         parsed = self.parse_order(response, default=fallback)
         order = self._clamp_order(parsed)

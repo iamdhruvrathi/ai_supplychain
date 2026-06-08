@@ -1,0 +1,8 @@
+# Per-echelon forecasting model assignment (Phase 1).
+# Used by tools/forecast_tool.py — not yet wired into LLM prompts.
+
+echelon_models:
+  Retailer: arima
+  Wholesaler: ets
+  Distributor: ets
+  Factory: ets
