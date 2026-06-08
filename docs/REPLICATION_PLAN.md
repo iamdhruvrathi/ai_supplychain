@@ -1,232 +1,95 @@
 # Replication Plan
 
-Target paper: **Reliability and Effectiveness of Autonomous AI Agents in Supply Chain Management** (Long, Simchi-Levi, Zhu, Su, Calmon & Calmon).
+Target paper: **Reliability and Effectiveness of Autonomous AI Agents in Supply Chain Management** (Long et al., arXiv:2605.17036).
 
-This document is a **replication checklist** mapped to codebase capabilities.
+This document is the **single replication checklist** mapped to codebase capabilities and completed experiment outputs.
 
----
-
-## Replication Targets
-
-### Tier 1 — Infrastructure (framework ready)
-
-| #   | Paper target                                   | Status   | Command / module                             |
-| --- | ---------------------------------------------- | -------- | -------------------------------------------- |
-| 1.1 | Multi-echelon Beer Game (4 tiers, lead time 2) | ✓ Done   | `simulator/beer_game.py`                     |
-| 1.2 | Decentralized local visibility                 | ✓ Done   | `OrchestratorMode.DECENTRALIZED`             |
-| 1.3 | Repeated runs (R=30) same environment          | ✓ Done   | `evaluation/repeated_runs.py`                |
-| 1.4 | Fixed demand path across runs                  | ✓ Done   | `demand_seed` in config                      |
-| 1.5 | Agent bullwhip metrics                         | ✓ Done   | `metrics/agent_bullwhip.py`                  |
-| 1.6 | Cost mean, std, CV                             | ✓ Done   | `metrics/reliability.py`, `cost_analysis.py` |
-| 1.7 | Budget guardrail                               | ✓ Config | `constraints.budget_limit`                   |
-| 1.8 | Orchestrator modes                             | ✓ Config | `orchestrator.mode` in YAML                  |
-| 1.9 | YAML experiments                               | ✓ Done   | `configs/default_experiment.yaml`            |
-
-### Tier 2 — Empirical replication (requires data + models)
-
-| #   | Paper target                     | Status     | Gap                                         |
-| --- | -------------------------------- | ---------- | ------------------------------------------- |
-| 2.1 | Figure 1 cost bars (human vs AI) | ◐ Partial  | Need human baseline CSV                     |
-| 2.2 | Table 1 cost + CV by scenario    | ◐ Partial  | Run `repeated_runs` per scenario            |
-| 2.3 | Figure 2 agent bullwhip boxplots | ◐ Partial  | Add boxplot per echelon/week from R runs    |
-| 2.4 | Figure 3 repeated sampling       | ✗ Missing  | Implement majority-vote in `LLMAgent`       |
-| 2.5 | 67% cost reduction vs humans     | ✗ External | Requires human data + same cost accounting  |
-| 2.6 | GPT-5 mini / Llama 4 Maverick    | ✗ API map  | Use closest Ollama models; document mapping |
-
-### Tier 3 — Theory & training (future)
-
-| #   | Paper target                    | Status                   |
-| --- | ------------------------------- | ------------------------ |
-| 3.1 | Transfer-function decomposition | ✗ Not coded              |
-| 3.2 | GRPO post-training              | ✗ Trajectory export only |
-| 3.3 | Tail event reduction after GRPO | ✗                        |
+**Last updated:** June 2026
 
 ---
 
-## Experiment Scenarios to Reproduce
+## Replication Status Summary
 
-Configure via YAML copies of `configs/default_experiment.yaml`:
-
-### Scenario A — Decentralized baseline (Section 3.1)
-
-```yaml
-orchestrator:
-  mode: decentralized
-constraints:
-  enabled: false
-experiment:
-  runs: 30
-```
-
-### Scenario B — Budget guardrail (Section 3.2)
-
-```yaml
-constraints:
-  enabled: true
-  budget_limit: 500 # tune to match paper units
-  order_cap: 40
-```
-
-### Scenario C — Demand sharing (Section 3.3)
-
-```yaml
-orchestrator:
-  mode: demand_sharing
-```
-
-### Scenario D — History sharing (Section 3.3)
-
-```yaml
-orchestrator:
-  mode: history_sharing
-```
-
-### Scenario E — Agent bullwhip analysis (Section 4.2)
-
-```yaml
-experiment:
-  runs: 30
-  demand_seed: 42 # fixed path
-evaluation:
-  compute_agent_bullwhip: true
-```
-
-Run:
-
-```powershell
-python evaluation/benchmark.py --config configs/scenario_e.yaml
-python -c "from evaluation.plotting import generate_research_plots; ..."
-```
+| Area | Progress | Notes |
+|------|----------|-------|
+| Infrastructure (Tier 1) | ~100% | Simulator, metrics, repeated runs, YAML config |
+| Empirical replication (Tier 2) | ~65% | Fig 2 qualitative; Fig 3 partial; Table 1 scenarios incomplete |
+| Theory & training (Tier 3) | ~10% | Trajectory export only; no GRPO |
 
 ---
 
-## Replication Checklist (operator)
+## Tier 1 — Infrastructure (complete)
 
-- [ ] Install Python deps + Ollama (see [SETUP.md](../SETUP.md))
-- [ ] Pull benchmark models (`qwen2.5:1.5b`, `deepseek-r1:1.5b`)
-- [ ] Run `python main.py test-llm`
-- [ ] Run decentralized 30-run baseline: `python evaluation/repeated_runs.py` (or benchmark)
-- [ ] Verify `results/repeated_runs/repeated_runs_report.json`
-- [ ] Verify Ψ_k > 1 upstream for LLM policies (agent bullwhip)
-- [ ] Run with `constraints.enabled: true` — compare CV drop
-- [ ] Run orchestrator modes — compare mean cost
-- [ ] Export trajectories to JSONL for offline analysis
-- [ ] Import human baseline (when available) for normalization
-
----
-
-## Missing Experiments (prioritized)
-
-1. **Human baseline comparison** — ingest Georgia Tech cohort CSV
-2. **Majority-vote sampling** (10, 100 samples) — Section 4.3
-3. **Per-week boxplots** — Figure 2 replication
-4. **Cost normalization** — match paper scale (human = 100)
-5. **Instruction-following failure rate** — track invalid orders per run
-6. **Heterogeneous per-echelon models** — already in YAML schema
+| # | Paper target | Status | Command / module |
+|---|--------------|--------|------------------|
+| 1.1 | Multi-echelon Beer Game (4 tiers, lead time 2) | Done | `simulator/beer_game.py` |
+| 1.2 | Decentralized local visibility | Done | `OrchestratorMode.DECENTRALIZED` |
+| 1.3 | Repeated runs (R=30) same environment | Done | `evaluation/repeated_runs.py` |
+| 1.4 | Fixed demand path across runs | Done | `demand_seed`, `fixed_demand_path`, MIT pattern |
+| 1.5 | Agent bullwhip metrics (Ψ, Φ, σ²) | Done | `metrics/agent_bullwhip.py` |
+| 1.6 | Cost mean, std, CV, median, IQR | Done | `metrics/cost_analysis.py`, `metrics/reliability.py` |
+| 1.7 | Budget guardrail | Config ready | `agents/constraints.py` |
+| 1.8 | Orchestrator modes (5) | Done | `simulator/orchestrator.py` |
+| 1.9 | YAML experiments | Done | `configs/default_experiment.yaml`, `benchmark.py` |
+| 1.10 | Trajectory export | Done | `trajectories/writer.py` (JSONL/CSV/Parquet) |
+| 1.11 | Multi-backend LLM | Done | Ollama, Groq, vLLM via `agents/llm_backends.py` |
 
 ---
 
-## Implementation Roadmap
+## Tier 2 — Empirical replication
 
-| Sprint | Deliverable                              | Est.      |
-| ------ | ---------------------------------------- | --------- |
-| S1     | Agent bullwhip + repeated runs + docs    | ✓ Current |
-| S2     | Figure-2 boxplots; scenario YAML suite   | 1 week    |
-| S3     | Majority voting; invalid-order metrics   | 1 week    |
-| S4     | Human baseline loader + normalized plots | 1 week    |
-| S5     | GRPO trainer skeleton on trajectories    | 2–3 weeks |
-| S6     | Gymnasium wrapper                        | 1 week    |
+| # | Paper target | Status | Evidence / gap |
+|---|--------------|--------|----------------|
+| 2.1 | Figure 1 (human vs AI cost bars) | Partial | No human baseline CSV in repo |
+| 2.2 | Table 1 (cost + CV by scenario) | Partial | Orchestrator/budget scenarios not all run at R=30 |
+| 2.3 | Figure 2 (agent bullwhip boxplots) | Done (qualitative) | `results/qwen25_30runs`, `experiments/run_figure2.py` |
+| 2.4 | Figure 3 (majority-vote sampling) | Partial | Implemented; `figure3_n10` complete; `figure3_n100` 5/10 runs |
+| 2.5 | 67% cost reduction vs humans | External | Requires human data |
+| 2.6 | Frontier API models | Partial | Local proxies: `qwen2.5:1.5b`, `Qwen/Qwen3-4B`, `qwen/qwen3-32b` |
+
+### Completed experiment outputs
+
+| Folder | Description | Runs | Status |
+|--------|-------------|------|--------|
+| `results/qwen25_30runs` | Fig 2 baseline, qwen2.5:1.5b, decentralized | 30 | Complete |
+| `results/qwen3_32b_fig2` | Fig 2, qwen3-32b (Groq) | 10 | Complete |
+| `results/figure3_n10` | Majority vote N=10 | 10 | Complete |
+| `results/figure3_n100` | Majority vote N=100 | 5/10 | Partial |
+| `results/exp1_baseline` | Intervention baseline (Qwen3-4B/vLLM) | 30 | Complete |
+| `results/exp2_tool` | Tool-assisted | 30 | Complete |
+| `results/exp3_negotiation` | Negotiation mode | 30 | Complete |
+| `results/exp4_tool_negotiation` | Tool + negotiation | 30 | Complete |
+
+### Extension experiments (beyond paper)
+
+| Intervention | Mean cost | CV | Consensus gap |
+|--------------|-----------|-----|---------------|
+| Baseline | 16,492 | 0.16 | 18.1 |
+| Tool | 15,282 | 0.05 | 29.0 |
+| Negotiation | 2,804 | 1.26 | 1.3 |
+| Tool + Negotiation | 12,852 | 0.06 | 17.8 |
+
+See `docs/results_analysis.md` and `analysis/negotiation_failure_report.md`.
 
 ---
 
-## Prioritized TODO Tree
+## Tier 3 — Theory & training (future)
 
-```
-Replication Framework
-├── P0 Metrics correctness
-│   ├── Unit tests: Ψ, Φ, σ² on synthetic orders
-│   └── Validate fixed demand across runs
-├── P0 Experiment harness
-│   ├── benchmark.py from YAML
-│   └── repeated_runs report JSON
-├── P1 Paper figures
-│   ├── Boxplot orders by echelon/week
-│   └── Cost CV table export
-├── P1 Interventions
-│   ├── Budget constraint calibration
-│   └── Orchestrator prompt A/B
-├── P2 Sampling
-│   └── Majority vote LLMAgent mode
-└── P3 GRPO
-    ├── Dataset from JSONL
-    └── Training script in train/
-```
+| # | Paper target | Status |
+|---|--------------|--------|
+| 3.1 | Transfer-function decomposition | Not coded |
+| 3.2 | GRPO post-training | Trajectory export only |
+| 3.3 | Tail event reduction after GRPO | Not started |
 
 ---
 
-## Success Criteria
-
-Replication is **successful** when, under fixed `demand_seed` and 30 runs:
-
-1. Mean total cost and CV are reported per model/scenario (Table 1 format).
-2. Agent bullwhip shows Ψ > 1 upstream for at least one LLM configuration.
-3. Budget constraint reduces CV vs. default (directional match to paper).
-4. Demand-sharing reduces mean cost vs. decentralized for weaker models (directional).
-5. Trajectories export cleanly for GRPO prototyping.
-
-Exact numeric match to paper figures is **not required** until human baselines and model APIs are aligned.
-
-# Replication Plan
-
-This document keeps the project focused on the first research goal:
-
-```text
-Replicate the paper's Figure 2-style agent bullwhip box plots.
-```
-
-## What Figure 2 Means
-
-In the paper, Figure 2 shows order quantities across repeated runs of the same Beer Game.
-
-The key idea:
-
-```text
-Same demand path + same game + same prompt + repeated AI decisions
-= measure decision unreliability
-```
-
-For each role and each week, we collect all orders from repeated runs and draw a box plot.
-
-Example:
-
-```text
-Retailer, week 10: orders from 30 runs -> one box
-Wholesaler, week 10: orders from 30 runs -> one box
-Distributor, week 10: orders from 30 runs -> one box
-Factory, week 10: orders from 30 runs -> one box
-```
-
-If the boxes get wider upstream, the model is showing **agent bullwhip**.
-
-## Minimum Replication Target
-
-| Target                               | Status                             |
-| ------------------------------------ | ---------------------------------- |
-| Four-echelon Beer Game               | Done                               |
-| Repeated runs with fixed demand seed | Done                               |
-| Trajectory export                    | Done                               |
-| Figure 2-style box plot script       | Done                               |
-| LLM run with Ollama                  | Implemented, needs local model run |
-| Exact paper model/data match         | Not done                           |
-| Human baseline comparison            | Not done                           |
-
-## The Main Pipeline
+## Figure 2 Pipeline (primary replication goal)
 
 ```text
 evaluation/repeated_runs.py
         |
         v
-results/repeated_runs/trajectories/rollouts.jsonl
+results/<experiment>/trajectories/rollouts.jsonl
         |
         v
 experiments/run_figure2.py
@@ -235,108 +98,139 @@ experiments/run_figure2.py
 plots/figure2_bullwhip_boxplots.png
 ```
 
-## Step 1: Prove The Code Works
+### What Figure 2 measures
 
-No Ollama required:
+Same demand path + same game + same prompt + repeated AI decisions → measure **decision unreliability** (agent bullwhip). Per echelon and week, collect orders from R runs and plot boxplots.
 
-```powershell
-python experiments/run_smoke_tests.py
+### Quick start
+
+**Offline smoke test (no Ollama):**
+
+```bash
+python evaluation/repeated_runs.py --weeks 5 --runs 2 --offline --output-dir results/offline_debug
+python experiments/run_figure2.py --results results/offline_debug --output plots/
 ```
 
-This creates a small offline run. The plot may look flat. That is fine.
+**Small LLM run:**
 
-## Step 2: Run A Tiny LLM Experiment
-
-Use this before committing to 30 runs:
-
-```powershell
+```bash
 ollama serve
 ollama pull qwen2.5:1.5b
 python evaluation/repeated_runs.py --weeks 5 --runs 3 --model qwen2.5:1.5b
 python experiments/run_figure2.py --results results/repeated_runs --output plots/
 ```
 
-Check:
+**Paper-style run:**
 
-```text
-plots/figure2_bullwhip_boxplots.png
+```bash
+python evaluation/repeated_runs.py --weeks 20 --runs 30 --model qwen2.5:1.5b --output-dir results/qwen25_30runs
+python experiments/run_figure2.py --results results/qwen25_30runs --output plots/
 ```
 
-## Step 3: Run The Paper-Style Experiment
+---
 
-```powershell
-python evaluation/repeated_runs.py --weeks 30 --runs 30 --model qwen2.5:1.5b
-python experiments/run_figure2.py --results results/repeated_runs --output plots/
+## Figure 3 Pipeline (majority vote)
+
+Implemented in `LLMAgent.generate_order_majority_vote()` and `experiments/run_majority_vote.py`.
+
+```bash
+python experiments/run_majority_vote.py --weeks 20 --runs 10 --model qwen2.5:1.5b --n-samples 10 --output-dir results/figure3_n10
+python experiments/run_majority_vote.py --weeks 20 --runs 10 --model qwen2.5:1.5b --n-samples 100 --output-dir results/figure3_n100
+python experiments/run_figure3.py --results-10 results/figure3_n10 --results-100 results/figure3_n100 --output plots/
 ```
 
-Use a different model by changing `--model`.
+---
 
-## How To Read The Outputs
+## Experiment Scenarios (YAML)
 
-### `rollouts.jsonl`
+Copy `configs/default_experiment.yaml` for each scenario:
 
-Each line is one agent's decision at one week:
+| Scenario | Orchestrator | Constraints | Purpose |
+|----------|--------------|-------------|---------|
+| A | `decentralized` | off | Section 3.1 baseline |
+| B | any | `budget_limit` on | Section 3.2 guardrail |
+| C | `demand_sharing` | off | Section 3.3 |
+| D | `history_sharing` | off | Section 3.3 |
+| E | `decentralized` | off, R=30 | Section 4.2 agent bullwhip |
 
-```json
-{
-  "week": 1,
-  "agent": "Retailer",
-  "action": 7,
-  "reward": -31.0
-}
+Run:
+
+```bash
+python evaluation/benchmark.py --config configs/default_experiment.yaml
+python evaluation/repeated_runs.py --config configs/scenario.yaml --runs 30 --model qwen2.5:1.5b
 ```
 
-The Figure 2 script mainly needs:
+---
 
-```text
-week
-agent
-action
-```
+## Operator Checklist
 
-### `repeated_runs_report.json`
+- [x] Install Python deps + Ollama (see [SETUP.md](../SETUP.md))
+- [x] Run `python main.py test-llm`
+- [x] Decentralized 30-run baseline (`results/qwen25_30runs`)
+- [x] Agent bullwhip Ψ > 1 upstream (LLM configs)
+- [x] Majority-vote sampling (Fig 3)
+- [x] Tool + negotiation intervention study (exp1–4)
+- [ ] Budget constraint A/B at R=30
+- [ ] Orchestrator modes A–D at R=30
+- [ ] Complete `figure3_n100` to 30 runs
+- [ ] LLM vs base-stock paired comparison at R=30
+- [ ] Human baseline CSV import
+- [ ] Export Table 1 CSV across scenarios
 
-This stores summary metrics:
+---
 
-```text
-total_costs
-cost
-reliability
-agent_bullwhip
-invalid_orders_summary
-```
+## Missing Experiments (prioritized)
 
-### `figure2_bullwhip_boxplots.png`
+| Priority | Experiment |
+|----------|------------|
+| P0 | Complete Fig 3 N=100 to 30 runs |
+| P0 | LLM vs base-stock at R=30 (same demand) |
+| P0 | Orchestrator modes at R=30 |
+| P1 | Budget guardrail ON/OFF at R=30 |
+| P1 | Tool ON/OFF on qwen2.5 (same backend as Fig 2) |
+| P1 | Statistical tests (bootstrap CI, Mann-Whitney) |
+| P2 | Human baseline comparison |
+| P2 | Heterogeneous per-echelon models (YAML wired) |
+| P3 | GRPO training on trajectories |
 
-This is the main visual artifact for the current goal.
+---
 
-## Why Offline Runs Are Not Enough
+## Implementation Roadmap
 
-Offline/base-stock runs are useful for debugging because they are fast and deterministic.
+| Sprint | Deliverable | Status |
+|--------|-------------|--------|
+| S1 | Agent bullwhip + repeated runs + docs | Done |
+| S2 | Figure 2 boxplots + result folders | Done |
+| S3 | Majority voting + intervention study | Done |
+| S4 | Unit tests (Ψ/Φ, parse_order) | Done |
+| S5 | Orchestrator/budget scenario sweep | In progress |
+| S6 | Human baseline loader | Not started |
+| S7 | GRPO trainer skeleton | Not started |
 
-But the paper's question is about autonomous AI reliability. For that, the ordering policy must have model-generated variation across repeated runs. That is why the real experiment needs Ollama or another LLM backend.
+---
 
-## What To Learn From The Experiment
+## Success Criteria
 
-Ask these questions while looking at the plot:
+Under fixed demand and R=30 runs:
 
-1. Does the Retailer stay relatively stable?
-2. Do upstream roles show larger order spread?
-3. Does spread grow over time within the same role?
-4. Are there extreme outlier orders?
-5. Do high-variance runs also create higher total cost?
+1. Mean total cost, CV, **median**, and **IQR** reported per scenario.
+2. Agent bullwhip shows Ψ > 1 upstream for at least one LLM configuration.
+3. Budget constraint reduces CV vs default (directional).
+4. Demand-sharing reduces mean cost vs decentralized for weaker models (directional).
+5. Trajectories export cleanly for offline analysis and GRPO prototyping.
 
-These questions are more important than matching the paper's exact numbers at this stage.
+Exact numeric match to paper figures is **not required** until human baselines and API models are aligned.
 
-## Next Improvements
+---
 
-Keep future work narrow:
+## Script Reference
 
-| Priority | Improvement                                        | Why                          |
-| -------- | -------------------------------------------------- | ---------------------------- |
-| P0       | Validate Figure 2 plot on a real 30-run LLM output | Main replication goal        |
-| P0       | Add a small test fixture for boxplot input parsing | Prevent plotting regressions |
-| P1       | Save model name and run settings beside each plot  | Easier research tracking     |
-| P1       | Compare `qwen2.5:1.5b` and `deepseek-r1:1.5b`      | Learn model differences      |
-| P2       | Add human baseline CSV when available              | Needed for paper cost claims |
-| P3       | Explore GRPO/PPO                                   | Later learning goal          |
+| Script | Purpose |
+|--------|---------|
+| `main.py` | CLI wrapper |
+| `evaluation/repeated_runs.py` | Core repeated-run engine |
+| `experiments/run_figure2.py` | Figure 2 boxplots |
+| `experiments/run_figure3.py` | Figure 3 majority-vote plots |
+| `experiments/run_majority_vote.py` | Majority-vote experiment runner |
+| `experiments/smoke_test.py` | Minimal simulator smoke test (not `run_smoke_tests.py`) |
+| `experiments/llm_experiment.py` | Single-run LLM experiment with plots |
